@@ -1,25 +1,48 @@
 #include <Arduino.h>
 #include "ISL9241.h"
 
+/*     Number of batteries    */
 #define ISL9241_BATT_NUM 2
+#if ISL9241_BATT_NUM < 2
+  #error "Invalid param ISL9241_BATT_NUM"
 
+#endif
+/*   Battery characteristics  */
 #define BATT_LOWER_VOLTAGE_LIMIT 2.8
 #define BATT_UPPER_VOLTAGE_LIMIT 3.2
+#define BATT_MAX_CHARGE_CURRENT 1.00
 
+/*     Program Frequency      */
 #define FREQ 10
 #define __PERIOD__ (1000.0 / FREQ)
 
+/*     Proportional Control  */
 #define P 5
 
-// Variables
+/*    Delay definitions      */
+#define __T_DEL_LONG__ 5000
+#define __T_DEL_MID__ 1000
+#define __T_DEL_SHORT__ 100
+#define __T_DEL__  10
+
+/*         Variables        */
 float previousPower = 0;
 float previousVoltage = 0;
 float SafeGuard = 1;
 
+// Device under test
 ISL9241 uut;
 
+void BlinkFatal(){
+  while(1){
+    digitalWrite(LED_BUILTIN,HIGH);
+    delay(500);
+    digitalWrite(LED_BUILTIN,LOW);
+    delay(500);
+  }
+}
 
-float **VI_Curve(float minCurrent, float maxCurrent, float stepSize = 0.004) {
+float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.004) {
   if (minCurrent < 0 || maxCurrent < 0 || stepSize < 0) {
     Serial.println("Invalid input");
     return nullptr;
@@ -57,18 +80,14 @@ float **VI_Curve(float minCurrent, float maxCurrent, float stepSize = 0.004) {
     VI_Curve[i][0] = uut.getAdapterVoltage();
     VI_Curve[i][1] = uut.getAdapterCurrent();
 
-    delay(10);
+    delay(__T_DEL__);
 
     // 10 digit progress bar
     if (i - prgBar > length / 10) {
       prgBar = i;
       Serial.print(F("#"));
-      Serial.print("\b$");
     }
   }
-
-  Serial.println(F("\\ \n D O N E !\n"));
-
   return VI_Curve;
 }
 
@@ -79,23 +98,23 @@ void setup() {
   /*    ~=~=~=RUN-TIME SANITY CHECKS=~=~=~    */
   if (ISL9241_BATT_NUM < 1 || ISL9241_BATT_NUM > 4) {
     Serial.println("Invalid number of batteries");
-    // while(1);
+    BlinkFatal();
   }
   if (BATT_LOWER_VOLTAGE_LIMIT >= BATT_UPPER_VOLTAGE_LIMIT) {
     Serial.println("Invalid battery voltage limits");
-    // while(1);
+    BlinkFatal();
   }
   if (BATT_LOWER_VOLTAGE_LIMIT < 2.5 || BATT_UPPER_VOLTAGE_LIMIT > ISL9241_BATT_NUM * 4.2) {
     Serial.println("Invalid battery voltage limits");
-    // while(1);
+    BlinkFatal();
   }
   if (FREQ < 1) {
     Serial.println("Invalid frequency");
-    // while(1);
+    BlinkFatal();
   }
-
   if (!uut.init()) {
     Serial.println("Init error");
+    BlinkFatal();
   }
 
   uut.writeBit(Control0, 0, 0);   // Disable Reverse Turbo Mode
@@ -116,7 +135,7 @@ void setup() {
 
 
   Serial.println("Starting...");
-  delay(1000);
+  delay(__T_DEL_MID__);
 
   float** curve = VI_Curve(0,0.6);
   size_t curveSize = 5.68/0.04;
@@ -126,10 +145,9 @@ void setup() {
   }
   free(curve);
 
-  Serial.println("\n\n\tIt is DONE !! \n\n");
+  Serial.println("\n\n\tSETUP COMPLETE !! \n\n");
 
-
-  delay(5000);
+  delay(__T_DEL_LONG__);
 }
 
 void loop() {
@@ -165,38 +183,23 @@ void loop() {
   if (power >= previousPower) {
     if (voltage >= previousVoltage) {
       Serial.print("1,");
-
       currentLimit += SafeGuard*P*(1 << 2);  // Increase charge current
-      // currentLimit += (1 << 2);
     } else {
       Serial.print("2,");
-
       currentLimit -= SafeGuard*P*(1 << 2);  // Decrease charge current
-      // currentLimit -= (1 << 2);
     }
   } else {
     if (voltage >= previousVoltage) {
       Serial.print("-1,");
-
       currentLimit += SafeGuard*P*(1 << 2);  // Decrease charge current
-      // currentLimit += (1 << 2);
     } else {
       Serial.print("-2,");
-
       currentLimit -= SafeGuard*P*(1 << 2);  // Increase charge current
-      // currentLimit -= (1 << 2);
     }
   }
 
   // Update the charge current limit
   currentLimit = uut.writeRegister(AdapterCurrentLimit1, currentLimit);
-
-  // Serial.print(SafeGuard);
-  // Serial.print(",");
-  // Serial.print(power);
-  // Serial.print(",");
-  // Serial.print(currentLimit);
-
 
   // Save the current values for the next iteration
   previousPower = power;

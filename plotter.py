@@ -1,75 +1,106 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Function to parse the log file
 def parse_log_file(file_path):
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
+	with open(file_path, 'r') as file:
+		lines = file.readlines()
 
     # Extracting VI Curve data
-    vi_curve_start = None
-    setup_complete = None
+	vi_curve_start = None
+	setup_complete = None
 
-    for i, line in enumerate(lines):
-        if line.strip() == "VI CURVE :":
-            vi_curve_start = i + 3
-        if line.strip() == "SETUP COMPLETE !!":
-            setup_complete = i
-            break
+	for i, line in enumerate(lines):
+		if line.strip() == "VI CURVE :":
+			vi_curve_start = i + 3
+		if line.strip() == "SETUP COMPLETE !!":
+			setup_complete = i
+			break
 
-    vi_curve_data = []
-    for line in lines[vi_curve_start:setup_complete]:
-        if line.strip():
-            vi_curve_data.append(list(map(float, line.strip().split(','))))
+	vi_curve_data = []
+	for line in lines[vi_curve_start:setup_complete]:
+		if line.strip() and line.strip()[0].isdigit():
+			try:
+				vi_curve_data.append(list(map(lambda x: float(x.replace('V', '').replace('A', '')), line.strip().split(','))))
+			except ValueError as e:
+				print(f"Skipping line due to error: {line.strip()} - {e}")
 
     # Extracting data after setup complete
-    post_setup_data = []
-    for line in lines[setup_complete+2:]:
-        if line.strip():
-            post_setup_data.append(list(map(float, line.strip().split(','))))
+	post_setup_data = []
+	for line in lines[setup_complete+2:]:
+		if line.strip() and line.strip()[0].isdigit():
+			try:
+				post_setup_data.append(list(map(float, line.strip().split(','))))
+			except ValueError as e:
+				print(f"Skipping line due to error: {line.strip()} - {e}")
 
-    return vi_curve_data, post_setup_data
+
+	return vi_curve_data, post_setup_data
 
 # Function to plot VI Curve data
 def plot_vi_curve(data):
-    voltages = [item[0] for item in data]
-    currents1 = [item[1] for item in data]
-    currents2 = [item[2] for item in data]
+	if not data:
+		print("No VI Curve data to plot.")
+		return
 
-    plt.figure()
-    plt.plot(voltages, currents1, label='Current 1 (A)')
-    plt.plot(voltages, currents2, label='Current 2 (A)')
-    plt.xlabel('Voltage (V)')
-    plt.ylabel('Current (A)')
-    plt.title('VI Curve')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+	voltages = [item[0] for item in data]
+	current = [item[1] for item in data]
+	currentsLimit = [item[2] for item in data]
+
+	POWER = np.multiply(voltages,current)
+
+	fig, ax = plt.subplots()
+	plt.plot(voltages, current, 'r.', label = 'Current')
+	plt.plot(voltages, currentsLimit, 'g-', label = 'Current Limit')
+	
+	plt.xlabel('Voltage (V)')
+	plt.ylabel('Current (A) / Power (W)')
+	plt.grid(True)
+ 
+	plt.plot(voltages, POWER, 'b-', label = 'Power')
+	plt.legend()
+	# plt.show()
+	
 
 # Function to plot post setup data
 def plot_post_setup_data(data):
-    modes = [item[0] for item in data]
-    voltages = [item[1] for item in data]
-    currents = [item[2] for item in data]
-    powers = [item[3] for item in data]
+	if not data:
+		print("No post-setup data to plot.")
+		return
 
-    plt.figure()
-    plt.scatter(voltages, currents, c=modes, cmap='bwr', label='Voltage vs Current')
-    plt.xlabel('Voltage (V)')
-    plt.ylabel('Current (A)')
-    plt.title('Voltage vs Current')
-    plt.grid(True)
-    plt.show()
+	modes = [item[0] for item in data]
+	voltages = [item[1] for item in data]
+	currents = [item[2] for item in data]
+	powers = [item[3] for item in data]
 
-    plt.figure()
-    plt.scatter(powers, voltages, c=modes, cmap='bwr', label='Power vs Voltage')
-    plt.xlabel('Power (W)')
-    plt.ylabel('Voltage (V)')
-    plt.title('Power vs Voltage')
-    plt.grid(True)
-    plt.show()
+	
+
+	time = np.arange(0, len(modes)*0.1, 0.1)
+
+	f1, axis = plt.subplots(3)
+ 
+	axis[0].plot(time, voltages, 'r-', label = 'Voltage')
+	axis[0].set_ylabel('Voltage (V)')
+	axis[0].set_xlabel('Time (s)')	
+	axis[0].grid(True)
+ 
+	axis[1].plot(time, currents, 'g-', label = 'Current')	
+	axis[1].set_ylabel('Current (A)')
+	axis[1].set_xlabel('Time (s)')
+	axis[1].grid(True)
+ 	
+	axis[2].plot(time, powers, 'b-', label = 'Power')
+	axis[2].set_ylabel('Power (W)')
+	axis[2].set_xlabel('Time (s)')
+	axis[2].grid(True)
+ 
+	
+	# plt.show()
 
 if __name__ == "__main__":
-    file_path = "log/log.txt"
-    vi_curve_data, post_setup_data = parse_log_file(file_path)
-    plot_vi_curve(vi_curve_data)
-    plot_post_setup_data(post_setup_data)
+	file_path = "log/log.txt"
+	vi_curve_data, post_setup_data = parse_log_file(file_path)
+
+	plot_vi_curve(vi_curve_data)
+	plot_post_setup_data(post_setup_data)
+	plt.show()

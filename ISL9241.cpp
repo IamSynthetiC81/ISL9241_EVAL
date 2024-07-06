@@ -12,7 +12,7 @@ bool ISL9241::init(unsigned int NoOfCells = 2) {
 	uint16_t value;
 	readRegister(DeviceID, &value);
 	if (value != 0x9241) {
-		return false;
+		// return false;
 	}
 
 	writeRegister(AdapterCurrentLimit1, 0x01D4);		// 0.468A
@@ -283,7 +283,7 @@ float ISL9241::getAdapterCurrentLimit2() {
 
 float ISL9241::setTricleChargeCurrent(TCCL_t lim) {
 	uint16_t reg = (uint16_t)lim << 2;
-	// writeRegister(TrickleChargeCurrentLimit, reg);
+	writeRegister(ChargeCurrentLimit, reg);
 
 	return (reg >> 2) * 4e-3;
 }

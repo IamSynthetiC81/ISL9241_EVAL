@@ -13,11 +13,11 @@
 #define BATT_MAX_CHARGE_CURRENT 1.00
 
 /*     Program Frequency      */
-#define FREQ 10
+#define FREQ 2
 #define __PERIOD__ (1000.0 / FREQ)
 
 /*     Proportional Control  */
-#define P 5
+#define P 2
 
 /*    Delay definitions      */
 #define __T_DEL_LONG__ 5000
@@ -43,6 +43,15 @@ void BlinkFatal(){
 }
 
 float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.004) {
+  Serial.print(F("minimum current : "));
+  Serial.println(minCurrent,3);
+
+  Serial.print(F("maximum current : "));
+  Serial.println(maxCurrent,3);
+
+  Serial.print(F("step size : "));
+  Serial.println(stepSize,3);
+
   if (minCurrent < 0 || maxCurrent < 0 || stepSize < 0) {
     Serial.println("Invalid input");
     return nullptr;
@@ -88,12 +97,13 @@ float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.0
       Serial.print(F("#"));
     }
   }
+  Serial.print("\n");
   return VI_Curve;
 }
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("Booting up ...");
+  Serial.println("\n\t~=~=~=MPPT Charge Controller=~=~=~\n\n");
 
   /*    ~=~=~=RUN-TIME SANITY CHECKS=~=~=~    */
   if (ISL9241_BATT_NUM < 1 || ISL9241_BATT_NUM > 4) {
@@ -118,7 +128,7 @@ void setup() {
   }
 
   uut.writeBit(Control0, 0, 0);   // Disable Reverse Turbo Mode
-  uut.writeBit(Control0, 1, 0);   //
+  uut.writeBit(Control0, 1, 0);   // 
   uut.writeBit(Control3, 5, 0);   // Enable Input Current Limit Control
   uut.writeBit(Control3, 7, 0);   // ChargeControl to AutoCharging
   uut.writeBit(Control2, 12, 0);  // Disable two level adapter current limit
@@ -129,25 +139,40 @@ void setup() {
 
   uut.setTricleChargeCurrent(TCCL_t::TC_256mA);
 
-  uut.setChargeCurrentLimit(3);  // For SAFETY
-  uut.setChargeCurrentLimit(5.68);
+  uut.setChargeCurrentLimit(1.2);  // For SAFETY
   uut.setAdapterCurrentLimit(0.04);
 
 
-  Serial.println("Starting...");
+  Serial.println("VI CURVE : ");
   delay(__T_DEL_MID__);
 
-  float** curve = VI_Curve(0,0.6);
-  size_t curveSize = 5.68/0.04;
+  float stepSize = 0.004;
+  float minCurrent = 0;
+  float maxCurrent = 1;
+
+  float** curve = VI_Curve(minCurrent, maxCurrent, stepSize);
+  size_t curveSize = maxCurrent/stepSize + 1;
 
   for(int i = 0 ; i < curveSize ; i++ ){
-    Serial.println(curve[i][0] + String("V, ") + curve[i][1] + String("A"));
+    Serial.print(curve[i][0], 3);
+    Serial.print("V, ");
+    Serial.print(curve[i][1],3);
+    Serial.print("A, ");
+    Serial.print(i*stepSize,3);
+    Serial.print("A\n");
   }
   free(curve);
 
-  Serial.println("\n\n\tSETUP COMPLETE !! \n\n");
+  
+  Serial.print(__PERIOD__);
 
-  delay(__T_DEL_LONG__);
+  Serial.println("\n\n\tSETUP COMPLETE !! \n\nPress any button to continue\n");
+
+  while(1){
+    if(Serial.available()) break;
+  }
+
+  Serial.print("Sampling Period : ");
 }
 
 void loop() {
@@ -175,31 +200,38 @@ void loop() {
   float power = voltage * current;
 
   // Maximum Power Point Tracking (MPPT) algorithm implemantaion
-  uint16_t currentLimit;  // Variable of change
+  float currentLimit;  // Variable of change
 
-  uut.readRegister(AdapterCurrentLimit1, &currentLimit);
+  // uut.readRegister(AdapterCurrentLimit1, &currentLimit);
 
   // Perturb and Observe (P&O) algorithm
   if (power >= previousPower) {
     if (voltage >= previousVoltage) {
       Serial.print("1,");
-      currentLimit += SafeGuard*P*(1 << 2);  // Increase charge current
+      // currentLimit += SafeGuard*P*(1 << 2);  // Increase charge current
+      currentLimit = uut.getBattChargeCurrent() + P*0.004;
     } else {
       Serial.print("2,");
-      currentLimit -= SafeGuard*P*(1 << 2);  // Decrease charge current
+      // currentLimit -= SafeGuard*P*(1 << 2);  // Decrease charge current
+      currentLimit = uut.getBattChargeCurrent() - P*0.004;
     }
   } else {
     if (voltage >= previousVoltage) {
       Serial.print("-1,");
-      currentLimit += SafeGuard*P*(1 << 2);  // Decrease charge current
+      // currentLimit -= SafeGuard*P*(1 << 2);  // Decrease charge current
+      currentLimit = uut.getBattChargeCurrent() - P*0.004; 
     } else {
       Serial.print("-2,");
-      currentLimit -= SafeGuard*P*(1 << 2);  // Increase charge current
+      currentLimit = uut.getBattChargeCurrent() + P*0.004;
+      // currentLimit += SafeGuard*P*(1 << 2);  // Increase charge current
     }
   }
 
+  
+
   // Update the charge current limit
-  currentLimit = uut.writeRegister(AdapterCurrentLimit1, currentLimit);
+  // uut.writeRegister(AdapterCurrentLimit1, currentLimit);
+  uut.setChargeCurrentLimit(currentLimit);
 
   // Save the current values for the next iteration
   previousPower = power;
@@ -211,6 +243,14 @@ void loop() {
   Serial.print(current);
   Serial.print(",");
   Serial.print(power);
+  // Serial.print(",");
+  // Serial.print(SafeGuard);
+  // Serial.print(",");
+  Serial.print(",");
+  Serial.print(uut.getBattChargeCurrent());
+  Serial.print(",");
+  Serial.print(currentLimit);
+  // Serial.print((currentLimit >> 2)*ADAPTER_CURRENT_LIMIT_LSB_VAL);
   Serial.println("");
 
   // Wait before the next loop iteration

@@ -107,51 +107,54 @@ function [samplingPeriod, Voltage, Current, Power] = parse_continous_data(lines)
   end
 end
 
+function parseData(filepattern)
+  % Expand the wildcard pattern to get a list of filenames
+  filenames = glob(filepattern);
+  
+  figure;
+  
+  for i = 1:length(filenames)
+    printf('Parsing file %s\n', filenames{i});
+    lines = parseFile(filenames{i}, '~=~=~=MPPT Charge Controller=~=~=~');
+    [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines);
 
-lines = parseFile('log/log.txt','~=~=~=MPPT Charge Controller=~=~=~');
-[min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines);
+    power = vi_curve_data(:,1) .* vi_curve_data(:,2);
+    max_power = max(power);
+    max_power_index = find(power == max_power);
 
-power = vi_curve_data(:,1) .* vi_curve_data(:,2);
-max_power = max(power);
-max_power_index = find(power == max_power);
+    printf('Max Power %d : %2.3fW\n',i, max_power);
+    printf('Voltage %d : %2.3fV\n', i, vi_curve_data(max_power_index, 1));
+    printf('Current %d : %2.3fA\n', i, vi_curve_data(max_power_index, 2));
 
-printf('Max Power : %2.3fW\n', max_power);
-printf('Voltage : %2.3fV\n', vi_curve_data(max_power_index, 1));
-printf('Current : %2.3fA\n', vi_curve_data(max_power_index, 2));
+    subplot(2,1,1);
+    plot(vi_curve_data(:,1), vi_curve_data(:,2));
+    xlabel('Voltage (V)');
+    ylabel('Current (A)');
+    title('VI Curve');
+    grid on; hold on;
 
-figure 1;
-ax = plotyy(vi_curve_data(:,1), vi_curve_data(:,2), vi_curve_data(:,1), power);
-xlabel('Voltage (V)');
-ylabel(ax(1), 'Current (A)');
-ylabel(ax(2), 'Power (W)');
-title('VI Curve');
-grid on;
+    subplot(2,1,2);
+    plot(vi_curve_data(:,1), power);
+    xlabel('Voltage (V)');
+    ylabel('Power (W)');
+    title('Power vs Voltage');
+    grid on; hold on;
+  end
+end
 
-%% Plot continous data
-figure 2;
+% Wrapper script to run parseData with command-line arguments
 
-[samplingPeriod, Voltage, Current, Power] = parse_continous_data(lines);
 
-time = 0:samplingPeriod:(length(Voltage)-1)*samplingPeriod;
+disp(nargin);
+% Check if the number of arguments is correct
+##if nargin != 1
+##  error("Usage: run_parseData('path/to/files/*')");
+##endif
 
-subplot(3,1,1);
-plot(time, Voltage);
-xlabel('Time (s)');
-ylabel('Voltage (V)');
-title('Voltage vs Time');
-grid on;
+disp(argv);
 
-subplot(3,1,2);
-plot(time, Current);
-xlabel('Time (s)');
-ylabel('Current (A)');
-title('Current vs Time');
-grid on;
+% Get the file pattern from the first argument
+filepattern = argv();
 
-subplot(3,1,3);
-plot(time, Power);
-xlabel('Time (s)');
-ylabel('Power (W)');
-title('Power vs Time');
-grid on;
-
+% Call the parseData function with the file pattern
+parseData(filepattern);

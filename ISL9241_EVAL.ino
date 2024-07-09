@@ -1,38 +1,53 @@
 #include <Arduino.h>
 #include "ISL9241.h"
+/*    Test Parameters    */
+#define TEST_TIME                 2*60
 
-/*     Number of batteries    */
-#define ISL9241_BATT_NUM 2
+
+/*     Number of batteries    */                        
+#define ISL9241_BATT_NUM          2                     // Number of batteries in series
+                                                        // 2, 3 or 4. Change this value to
+                                                        // the number of batteries in series
 #if ISL9241_BATT_NUM < 2
   #error "Invalid param ISL9241_BATT_NUM"
 
 #endif
 /*   Battery characteristics  */
-#define BATT_LOWER_VOLTAGE_LIMIT 2.8
-#define BATT_UPPER_VOLTAGE_LIMIT 3.2
-#define BATT_MAX_CHARGE_CURRENT 1.00
+#define BATT_LOWER_VOLTAGE_LIMIT  2.8                   // Lower voltage limit     
+#define BATT_UPPER_VOLTAGE_LIMIT  3.2                   // Upper voltage limit
+#define BATT_MAX_CHARGE_CURRENT   1.00                  // Maximum charge current
 
 /*     Program Frequency      */
-#define FREQ 2
-#define __PERIOD__ (1000.0 / FREQ)
+#define FREQ                      2                     // Frequency of the program in Hz
+                                                        // Change this value to the desired frequency
+#define __PERIOD__                (1000.0 / FREQ)
 
 /*     Proportional Control  */
-#define P 2
+#define P                 1
 
 /*    Delay definitions      */
-#define __T_DEL_LONG__ 5000
-#define __T_DEL_MID__ 1000
-#define __T_DEL_SHORT__ 100
-#define __T_DEL__  10
+#define __T_DEL_LONG__            5000
+#define __T_DEL_MID__             1000
+#define __T_DEL_SHORT__           100
+#define __T_DEL__                 10
 
 /*         Variables        */
-float previousPower = 0;
-float previousVoltage = 0;
-float SafeGuard = 1;
+float currentLimit                = 0.01;  // Variable of change
+float previousPower               = 0;
+float previousVoltage             = 0;
+float SafeGuard                   = 1;
+
+bool window                       = false;
+unsigned long startTime           = 0;
 
 // Device under test
 ISL9241 uut;
 
+/**
+ * @brief Blink the LED on the board indefinitely to indicate a fatal error.
+ * 
+ * @note This function will never return
+ */
 void BlinkFatal(){
   while(1){
     digitalWrite(LED_BUILTIN,HIGH);
@@ -42,6 +57,17 @@ void BlinkFatal(){
   }
 }
 
+/**
+ * @brief Generate a VI curve
+ * 
+ * @param minCurrent The minimum current to start the curve at
+ * @param maxCurrent The maximum current to end the curve at
+ * @param stepSize The step size to use
+ * @return float** A 2D array of the VI curve
+ * 
+ * @note The first column is the voltage and the second column is the current
+ * @note The caller is responsible for freeing the memory
+ */
 float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.004) {
   Serial.print(F("minimum current : "));
   Serial.println(minCurrent,3);
@@ -101,8 +127,40 @@ float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.0
   return VI_Curve;
 }
 
+/** Set up the hardware timer1 to run at a specific frequency
+ * @param freq The frequency to run the timer at
+ * @return The period of the timer
+ */
+float initHardwareTimer(uint32_t freq) { 
+  // Set the timer in CTC mode
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCCR1B |= (1 << WGM12);
+
+  // Set the prescaler to 64
+  TCCR1B |= (1 << CS11) | (1 << CS10);
+
+  // Set the compare value
+  OCR1A = (F_CPU / 64 / freq) - 1;
+
+  // Enable the interrupt
+  TIMSK1 |= (1 << OCIE1A);
+
+  // Enable global interrupts
+  sei();
+
+  return 1.0 / (F_CPU / 64 / freq);
+}
+
+/**
+ * @brief Timer1 compare match interrupt service routine
+ */
+ISR(TIMER1_COMPA_vect) {
+  window = true;
+}
+
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("\n\t~=~=~=MPPT Charge Controller=~=~=~\n\n");
 
   /*    ~=~=~=RUN-TIME SANITY CHECKS=~=~=~    */
@@ -163,19 +221,28 @@ void setup() {
   }
   free(curve);
 
+  // Serial.println("\n\n\tSETUP COMPLETE !! \n\nPress any button to continue\n");
+  // while(1){
+  //   if(Serial.available()) break;
+  // }
   
-  Serial.print(__PERIOD__);
-
-  Serial.println("\n\n\tSETUP COMPLETE !! \n\nPress any button to continue\n");
-
-  while(1){
-    if(Serial.available()) break;
-  }
-
+  Serial.println("\n\n\tSETUP COMPLETE !! \n");
+  
   Serial.print("Sampling Period : ");
+  Serial.println(__PERIOD__);
+
+  startTime = millis();
 }
 
 void loop() {
+  /*    ~=~=~=Maximum Runtime Guard=~=~=~    */
+  if(millis() - startTime > TEST_TIME * 1000){
+    Serial.println("Test Complete");
+    BlinkFatal();
+  }
+
+  if (!window) return;                                          // Wait for the timer interrupt
+
   float voltage = uut.getAdapterVoltage();
   float current = uut.getAdapterCurrent(); 
 
@@ -196,63 +263,52 @@ void loop() {
     SafeGuard = 1;
   }
 
-  // Calculate power
-  float power = voltage * current;
+  float power = voltage * current;                              // Calculate the power
 
   // Maximum Power Point Tracking (MPPT) algorithm implemantaion
-  float currentLimit;  // Variable of change
-
-  // uut.readRegister(AdapterCurrentLimit1, &currentLimit);
-
   // Perturb and Observe (P&O) algorithm
-  if (power >= previousPower) {
+  if (power > previousPower) {
     if (voltage >= previousVoltage) {
-      Serial.print("1,");
-      // currentLimit += SafeGuard*P*(1 << 2);  // Increase charge current
-      currentLimit = uut.getBattChargeCurrent() + P*0.004;
-    } else {
+      Serial.print("1,"); 
+      currentLimit += P*0.004;                                  // Increase the current limit
+    } else if (voltage < previousVoltage){
       Serial.print("2,");
-      // currentLimit -= SafeGuard*P*(1 << 2);  // Decrease charge current
-      currentLimit = uut.getBattChargeCurrent() - P*0.004;
+      currentLimit -= P*0.004;                                  // Decrease the current limit 
     }
-  } else {
+  } else if (power < previousPower) {
     if (voltage >= previousVoltage) {
       Serial.print("-1,");
-      // currentLimit -= SafeGuard*P*(1 << 2);  // Decrease charge current
-      currentLimit = uut.getBattChargeCurrent() - P*0.004; 
+      currentLimit -= P*0.004;                                  // Decrease the current limit
     } else {
       Serial.print("-2,");
-      currentLimit = uut.getBattChargeCurrent() + P*0.004;
-      // currentLimit += SafeGuard*P*(1 << 2);  // Increase charge current
+      currentLimit += P*0.004;                                  // Increase the current limit
     }
+  } else {
+    Serial.print("0,");   
+    currentLimit += P*0.004;                                    // Increase the current limit
   }
 
-  
+  if (currentLimit < 0 ) currentLimit = 0.0;                    // Lower limit check
+  uut.setAdapterCurrentLimit(currentLimit);                     // Set the new current limit
 
-  // Update the charge current limit
-  // uut.writeRegister(AdapterCurrentLimit1, currentLimit);
-  uut.setChargeCurrentLimit(currentLimit);
 
-  // Save the current values for the next iteration
-  previousPower = power;
-  previousVoltage = voltage;
+  previousPower = power;                                        // Update the previous power
+  previousVoltage = voltage;                                    // Update the previous voltage
 
   // Print values
   Serial.print(voltage);
   Serial.print(",");
-  Serial.print(current);
+  Serial.print(current,4);
   Serial.print(",");
-  Serial.print(power);
-  // Serial.print(",");
-  // Serial.print(SafeGuard);
-  // Serial.print(",");
+  Serial.print(power,4);
   Serial.print(",");
-  Serial.print(uut.getBattChargeCurrent());
+  Serial.print(uut.getBattChargeCurrent(),4);
   Serial.print(",");
-  Serial.print(currentLimit);
-  // Serial.print((currentLimit >> 2)*ADAPTER_CURRENT_LIMIT_LSB_VAL);
+  Serial.print(currentLimit,4);
   Serial.println("");
 
   // Wait before the next loop iteration
-  delay(__PERIOD__);
+  // delay(__PERIOD__);
+
+  window = false;                                               // Reset the window flag
 }

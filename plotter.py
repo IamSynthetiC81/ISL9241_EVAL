@@ -33,7 +33,7 @@ def parse_log_file(file_path, step_size = 0.004, sampling_period = 100):
 
 	# Extracting data after setup complete
 	post_setup_data = []
-	for line in lines[setup_complete+4:]:
+	for line in lines[setup_complete+6:]:
 		if line.strip() and line.strip()[0].isdigit():
 			try:
 				post_setup_data.append(list(map(float, line.strip().split(','))))
@@ -105,7 +105,7 @@ def plot_post_setup_data(data, samplingPeriod = 100):
 	currents = [item[2] for item in data]
 	powers = [item[3] for item in data]
 
-	time = np.arange(0, len(modes)*samplingPeriod*0.1, samplingPeriod*0.1)
+	time = np.arange(0, len(modes)*samplingPeriod*0.001, samplingPeriod*0.001)
 
 	f1, axis = plt.subplots(3)
  

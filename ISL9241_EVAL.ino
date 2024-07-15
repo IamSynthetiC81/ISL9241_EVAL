@@ -82,11 +82,12 @@ void BlinkFatal(){
  * @note Memory is allocated for the data pointer and is the callers responsibility to free.
  */
 int VI_Curve(
-  float*** data, 
+  float ***data,
   float minCurrent = 0,
   float maxCurrent = 5.68,
   float stepSize = 0.004,
-  float MinVoltage = 5
+  float MinVoltage = 5,
+  const unsigned int averaging_window = 10;
 ){
   Serial.print(F("minimum current : "));
   Serial.println(minCurrent,3);
@@ -125,18 +126,23 @@ int VI_Curve(
 
   int size = -1;
 
+  unsigned int est_time = length * __T_DEL_SHORT__ * 0.001 * averaging_window;
   Serial.print(F("This will take aprox "));
-  Serial.print(length*__T_DEL_SHORT__*0.001);
+  Serial.print(est_time);
   Serial.println(F(" seconds"));
 
   /* Scan VI curve  */
   for (int i = 0; i < length; i++) {
     float val = uut.setAdapterCurrentLimit(minCurrent + i * stepSize);
-    
-    delay(__T_DEL_SHORT__);
 
-    (*data)[i][0] = uut.getAdapterVoltage();
-    (*data)[i][1] = uut.getAdapterCurrent();
+    /*      Takes averages      */
+    (*data)[i][0] = 0;
+    (*data)[i][1] = 0;
+    for (int j = 0; j < averaging_window; j++ ){
+      delay(__T_DEL_SHORT__);
+      (*data)[i][0] += uut.getAdapterVoltage()/averaging_window;
+      (*data)[i][1] += uut.getAdapterCurrent()/averaging_window;
+    }
 
     size = i + 1;
 
@@ -251,12 +257,13 @@ void setup() {
   float stepSize = 0.004;
   float minCurrent = 0;
   float maxCurrent = 1;
+  float minVoltage = ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD;
+  unsigned int averaging = 10;
 
   float** curve;
-  int size = VI_Curve(&curve, minCurrent, maxCurrent, stepSize);
-  if(size <= 0 ){
-    perror_fatal("VI curve error");
-  }
+  int size = VI_Curve(&curve, minCurrent, maxCurrent, stepSize, minVoltage, averaging);
+  if (size <= 0) perror_fatal("VI curve error");
+  
 
   for(int i = 0 ; i < size ; i++ ){
     Serial.print(curve[i][0], 3);

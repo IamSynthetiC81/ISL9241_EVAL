@@ -117,7 +117,7 @@ plot(t,p); grid on;
 xlabel("n Cycles");
 ylabel("Power (W)");
 
-%%
+%% Heatmap of algorithm
 
 heatmap = 1:length(Power);
 for k = 1:length(Power)
@@ -128,19 +128,21 @@ for k = 1:length(Power)
     end
 end
 
+heatmap = heatmap/max(heatmap);
+
 figure(3);
 plot(Voltage, Power); grid on; hold on;
 
 % Create a colormap based on the probability vector
 cmap = colormap(jet(100)); % You can choose other colormaps like 'hot', 'parula', etc.
-colors = interp1(linspace(0, 1, size(cmap, 1)), cmap, P_prob);
+colors = interp1(linspace(0, 1, size(cmap, 1)), cmap, heatmap);
 
 for k = 1:length(Voltage)-1
-    fill([Voltage(k) Voltage(k+1) Voltage(k+1) Voltage(k)], [0 0 Current(k+1) Current(k)], colors(k,:), 'EdgeColor', 'none');
+    fill([Voltage(k) Voltage(k+1) Voltage(k+1) Voltage(k)], [0 0 Power(k+1) Power(k)], colors(k,:), 'EdgeColor', 'none');
 end
 
 colorbar;
-caxis([0 max_power]); % Assuming probability values range from 0 to 1
+clim([0 1]); % Assuming probability values range from 0 to 1
 grid on;
 %% Functions
 

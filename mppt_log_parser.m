@@ -5,7 +5,6 @@ clc; clear all; close all;
 %% Parse lines
 
 function lines = parseFile(filename, startString)
-
   lines = NaN;
 
   fid = fopen(filename, 'r');
@@ -119,13 +118,14 @@ function parseData(filepattern)
     [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines);
 
     power = vi_curve_data(:,1) .* vi_curve_data(:,2);
-    max_power = max(power);
-    max_power_index = find(power == max_power);
-
+    [max_power,max_power_index] = max(power);
+    
     printf('Max Power %d : %2.3fW\n',i, max_power);
     printf('Voltage %d : %2.3fV\n', i, vi_curve_data(max_power_index, 1));
     printf('Current %d : %2.3fA\n', i, vi_curve_data(max_power_index, 2));
 
+
+    figure(1);
     subplot(2,1,1);
     plot(vi_curve_data(:,1), vi_curve_data(:,2));
     xlabel('Voltage (V)');
@@ -139,22 +139,36 @@ function parseData(filepattern)
     ylabel('Power (W)');
     title('Power vs Voltage');
     grid on; hold on;
+
+    figure(2);
+    [samplingPeriod, Voltage, Current, Power] = parse_continous_data(lines);
+    t = 0 : samplingPeriod : samplingPeriod*(length(Voltage)-1);
+    
+    subplot(3,1,1);
+    plot(t, Voltage); hold on; grid on;
+    xlabel("Time (s)");
+    ylabel("Voltage (V)");
+
+    subplot(3,1,2);
+    plot(t, Current); hold on; grid on;
+    xlabel("Time (s)");
+    ylabel("Current (A)");
+
+    subplot(3,1,3);
+    plot(t, Power); hold on; grid on;
+    xlabel("Time (s)");
+    ylabel("Power (W)");
+    
+
   end
 end
 
 % Wrapper script to run parseData with command-line arguments
-
-
-disp(nargin);
-% Check if the number of arguments is correct
-##if nargin != 1
-##  error("Usage: run_parseData('path/to/files/*')");
-##endif
-
-disp(argv);
 
 % Get the file pattern from the first argument
 filepattern = argv();
 
 % Call the parseData function with the file pattern
 parseData(filepattern);
+
+

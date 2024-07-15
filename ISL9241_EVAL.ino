@@ -1,7 +1,13 @@
 #include <Arduino.h>
 #include "ISL9241.h"
+
+void BlinkFatal();
+
+#define perror(x) Serial.print("\t");Serial.println(x);
+#define perror_fatal(x) perror(x); BlinkFatal();
+
 /*    Test Parameters    */
-#define TEST_TIME                 2*60
+#define TEST_TIME                 2.0*60
 
 
 /*     Number of batteries    */                        
@@ -18,12 +24,17 @@
 #define BATT_MAX_CHARGE_CURRENT   1.00                  // Maximum charge current
 
 /*     Program Frequency      */
-#define FREQ                      2                     // Frequency of the program in Hz
+#define FREQ                      10                    // Frequency of the program in Hz
                                                         // Change this value to the desired frequency
 #define __PERIOD__                (1000.0 / FREQ)
 
+#define PERTRUB_FREQ              100                   // Frequency for Perturbation as 1 action per n samples.
+#define PERTRUB_STEP_FACTOR       2                     // Step multiplier
+uint64_t nCycles = 0;
+
 /*     Proportional Control  */
-#define P                 1
+#define P                 2.0
+#define Step              0.004
 
 /*    Delay definitions      */
 #define __T_DEL_LONG__            5000
@@ -32,7 +43,7 @@
 #define __T_DEL__                 10
 
 /*         Variables        */
-float currentLimit                = 0.01;  // Variable of change
+float currentLimit                = 0.012;  // Variable of change
 float previousPower               = 0;
 float previousVoltage             = 0;
 float SafeGuard                   = 1;
@@ -60,15 +71,23 @@ void BlinkFatal(){
 /**
  * @brief Generate a VI curve
  * 
+ * @param data A float pointer where the data will be saved
  * @param minCurrent The minimum current to start the curve at
  * @param maxCurrent The maximum current to end the curve at
  * @param stepSize The step size to use
- * @return float** A 2D array of the VI curve
+ * @param MinVoltage Minimum operating voltage of the board under test.
+ * @return Number of data rows, or -1 on error.
  * 
  * @note The first column is the voltage and the second column is the current
- * @note The caller is responsible for freeing the memory
+ * @note Memory is allocated for the data pointer and is the callers responsibility to free.
  */
-float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.004) {
+int VI_Curve(
+  float*** data, 
+  float minCurrent = 0,
+  float maxCurrent = 5.68,
+  float stepSize = 0.004,
+  float MinVoltage = 5
+){
   Serial.print(F("minimum current : "));
   Serial.println(minCurrent,3);
 
@@ -79,54 +98,54 @@ float **VI_Curve(float minCurrent, float maxCurrent = 5.68, float stepSize = 0.0
   Serial.println(stepSize,3);
 
   if (minCurrent < 0 || maxCurrent < 0 || stepSize < 0) {
-    Serial.println("Invalid input");
-    return nullptr;
+    perror("Invalid input");
+    return -1;
   }
 
   int length = (maxCurrent - minCurrent) / stepSize;
   if (length < 1) {
-    Serial.println("stepSize too large");
-    return nullptr;
+    perror("stepSize too large");
+    return -1;
   }
 
-
   // Allocate a 2xlength block of memory
-  float **VI_Curve;
-  VI_Curve = (float **)malloc(length * sizeof(float *));
-  if (VI_Curve == NULL) {
-    Serial.println("Memory allocation failed");
-    return nullptr;
+  *data = (float **)malloc(length * sizeof(float *));
+  if (*data == NULL) {
+    perror("Memory allocation failed");
+    return -1;
   }
 
   for (int i = 0; i < length; i++) {
-    VI_Curve[i] = (float *)malloc(2 * sizeof(float));
-    if (VI_Curve[i] == NULL) {
-      Serial.println("Memory allocation failed");
-      return nullptr;
+    (*data)[i] = (float *)malloc(2 * sizeof(float));
+    if ((*data)[i] == NULL) {
+      perror("Memory allocation failed");
+      return -1;
     }
   }
 
-  int prgBar = 0;
-  Serial.print(F("/..........\\\n/"));
+  int size = -1;
+
+  Serial.print(F("This will take aprox "));
+  Serial.print(length*__T_DEL_SHORT__*0.001);
+  Serial.println(F(" seconds"));
 
   /* Scan VI curve  */
   for (int i = 0; i < length; i++) {
-    uut.setAdapterCurrentLimit(minCurrent + i * stepSize);
-    VI_Curve[i][0] = uut.getAdapterVoltage();
-    VI_Curve[i][1] = uut.getAdapterCurrent();
+    float val = uut.setAdapterCurrentLimit(minCurrent + i * stepSize);
+    
+    delay(__T_DEL_SHORT__);
 
-    delay(__T_DEL__);
+    (*data)[i][0] = uut.getAdapterVoltage();
+    (*data)[i][1] = uut.getAdapterCurrent();
 
-    // 10 digit progress bar
-    if (i - prgBar > length / 10) {
-      prgBar = i;
-      Serial.print(F("#"));
-    }
+    size = i + 1;
+
+    if ((*data)[i][0] <= MinVoltage) break;
+
   }
-  Serial.print("\n");
-  return VI_Curve;
-}
 
+  return size;
+}
 /** Set up the hardware timer1 to run at a specific frequency
  * @param freq The frequency to run the timer at
  * @return The period of the timer
@@ -159,31 +178,56 @@ ISR(TIMER1_COMPA_vect) {
   window = true;
 }
 
+float algorithm_P_AND_O(float dv, float dp, float currentLimit, float step = 0.004){
+  if (dp > 0){
+    if(dv > 0){       
+      currentLimit += P*SafeGuard*step;
+      Serial.print(F("+1,"));
+    } else if (dv < 0){ 
+      currentLimit -= P*SafeGuard*step;
+      Serial.print(F("-1,"));
+    } else {
+      currentLimit += P*SafeGuard*step/2;
+      Serial.print(F(" 1,"));
+    }
+  } else if (dp < 0){
+    if(dv > 0){       
+      currentLimit -= P*SafeGuard*step;
+      Serial.print(F("+2,"));
+    }
+    else if (dv < 0){ 
+      currentLimit += P*SafeGuard*step;
+      Serial.print(F("-2,"));
+    } else {
+      currentLimit -= P*SafeGuard*step;
+      Serial.print(F(" 2,"));
+    }
+  } else {
+    
+    if (dp >= 0){
+      Serial.print(F("+0,"));
+      currentLimit += P*SafeGuard*step/2;
+    } else {
+      Serial.print(F("-0,"));
+      currentLimit -= P*SafeGuard*step/2;
+    }
+       
+  }
+
+  return currentLimit;
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("\n\t~=~=~=MPPT Charge Controller=~=~=~\n\n");
 
   /*    ~=~=~=RUN-TIME SANITY CHECKS=~=~=~    */
-  if (ISL9241_BATT_NUM < 1 || ISL9241_BATT_NUM > 4) {
-    Serial.println("Invalid number of batteries");
-    BlinkFatal();
-  }
-  if (BATT_LOWER_VOLTAGE_LIMIT >= BATT_UPPER_VOLTAGE_LIMIT) {
-    Serial.println("Invalid battery voltage limits");
-    BlinkFatal();
-  }
-  if (BATT_LOWER_VOLTAGE_LIMIT < 2.5 || BATT_UPPER_VOLTAGE_LIMIT > ISL9241_BATT_NUM * 4.2) {
-    Serial.println("Invalid battery voltage limits");
-    BlinkFatal();
-  }
-  if (FREQ < 1) {
-    Serial.println("Invalid frequency");
-    BlinkFatal();
-  }
-  if (!uut.init()) {
-    Serial.println("Init error");
-    BlinkFatal();
-  }
+  if (ISL9241_BATT_NUM < 1 || ISL9241_BATT_NUM > 4){             perror_fatal("Invalid number of batteries");}
+  if (BATT_LOWER_VOLTAGE_LIMIT >= BATT_UPPER_VOLTAGE_LIMIT){     perror_fatal("Invalid battery voltage limits");}
+  if (BATT_LOWER_VOLTAGE_LIMIT < 2.5){                           perror_fatal("Invalid battery low voltage limit");}
+  if (BATT_UPPER_VOLTAGE_LIMIT > ISL9241_BATT_NUM * 4.2){        perror_fatal("Invalid battery upper voltage limit");}
+  if (FREQ < 1){                                                 perror_fatal("Invalid frequency");}
+  if (!uut.init()){                                              perror_fatal("Init error");}
 
   uut.writeBit(Control0, 0, 0);   // Disable Reverse Turbo Mode
   uut.writeBit(Control0, 1, 0);   // 
@@ -208,10 +252,13 @@ void setup() {
   float minCurrent = 0;
   float maxCurrent = 1;
 
-  float** curve = VI_Curve(minCurrent, maxCurrent, stepSize);
-  size_t curveSize = maxCurrent/stepSize + 1;
+  float** curve;
+  int size = VI_Curve(&curve, minCurrent, maxCurrent, stepSize);
+  if(size <= 0 ){
+    perror_fatal("VI curve error");
+  }
 
-  for(int i = 0 ; i < curveSize ; i++ ){
+  for(int i = 0 ; i < size ; i++ ){
     Serial.print(curve[i][0], 3);
     Serial.print("V, ");
     Serial.print(curve[i][1],3);
@@ -219,13 +266,9 @@ void setup() {
     Serial.print(i*stepSize,3);
     Serial.print("A\n");
   }
+  uut.setAdapterCurrentLimit(0);
   free(curve);
 
-  // Serial.println("\n\n\tSETUP COMPLETE !! \n\nPress any button to continue\n");
-  // while(1){
-  //   if(Serial.available()) break;
-  // }
-  
   Serial.println("\n\n\tSETUP COMPLETE !! \n");
   
   Serial.print("Sampling Period : ");
@@ -235,80 +278,57 @@ void setup() {
 }
 
 void loop() {
-  /*    ~=~=~=Maximum Runtime Guard=~=~=~    */
-  if(millis() - startTime > TEST_TIME * 1000){
+  /* ~=~=~=Maximum Runtime Guard=~=~=~ */
+  if ((millis() - startTime) > (TEST_TIME * 1000)) {
     Serial.println("Test Complete");
     BlinkFatal();
   }
 
-  if (!window) return;                                          // Wait for the timer interrupt
-
   float voltage = uut.getAdapterVoltage();
   float current = uut.getAdapterCurrent(); 
 
-  // while (voltage < ISL9241_MIN_OPERATING_VOLTAGE) {
-  //   //@TODO: At this point, the ISL9241 will be unreachable
-  //   uut.setChargeCurrentLimit(0);  // Stop charging
-
-  //   delay(1000);
-  //   voltage = uut.getAdapterVoltage();
-
-  //   Serial.println(String("LOW OPERATING VOLTAGE : ") + voltage + String("V"));
-  // }
-
-  /*    ~=~=~=MIN VOLTAGE GUARD=~=~=~    */
-  if (voltage > ISL9241_MIN_OPERATING_VOLTAGE && voltage < ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD) {
-    SafeGuard = (voltage - ISL9241_MIN_OPERATING_VOLTAGE) / (ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD - ISL9241_MIN_OPERATING_VOLTAGE);
+  /* ~=~=~=MIN VOLTAGE GUARD=~=~=~ */
+  if (voltage < ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD) {
+    SafeGuard = -(voltage - ISL9241_MIN_OPERATING_VOLTAGE) / (ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD - ISL9241_MIN_OPERATING_VOLTAGE);
   } else {
     SafeGuard = 1;
   }
 
-  float power = voltage * current;                              // Calculate the power
+  float power = voltage*current;
+  
+  float deltaV = voltage - previousVoltage;
+  float deltaP = power - previousPower;
 
-  // Maximum Power Point Tracking (MPPT) algorithm implemantaion
+  // Maximum Power Point Tracking (MPPT) algorithm implementation
   // Perturb and Observe (P&O) algorithm
-  if (power > previousPower) {
-    if (voltage >= previousVoltage) {
-      Serial.print("1,"); 
-      currentLimit += P*0.004;                                  // Increase the current limit
-    } else if (voltage < previousVoltage){
-      Serial.print("2,");
-      currentLimit -= P*0.004;                                  // Decrease the current limit 
-    }
-  } else if (power < previousPower) {
-    if (voltage >= previousVoltage) {
-      Serial.print("-1,");
-      currentLimit -= P*0.004;                                  // Decrease the current limit
-    } else {
-      Serial.print("-2,");
-      currentLimit += P*0.004;                                  // Increase the current limit
-    }
+  if((nCycles % PERTRUB_FREQ) == PERTRUB_FREQ){
+    Serial.print(F(" P,"));
+    currentLimit += PERTRUB_STEP_FACTOR * Step;
   } else {
-    Serial.print("0,");   
-    currentLimit += P*0.004;                                    // Increase the current limit
+    currentLimit = algorithm_P_AND_O(deltaV,deltaP, currentLimit, Step);
   }
 
-  if (currentLimit < 0 ) currentLimit = 0.0;                    // Lower limit check
-  uut.setAdapterCurrentLimit(currentLimit);                     // Set the new current limit
+  if (currentLimit < 0) currentLimit = 0.0;     // Lower limit check
+  if (currentLimit > 2) currentLimit = 1.0;     // Upper limit check
+  uut.setAdapterCurrentLimit(currentLimit);     // Set the new current limit
 
-
-  previousPower = power;                                        // Update the previous power
-  previousVoltage = voltage;                                    // Update the previous voltage
+  previousPower = power;                        // Update the previous power
+  previousVoltage = voltage;                    // Update the previous voltage
 
   // Print values
-  Serial.print(voltage);
+  Serial.print(voltage, 3);
   Serial.print(",");
-  Serial.print(current,4);
+  Serial.print(current, 4);
   Serial.print(",");
-  Serial.print(power,4);
+  Serial.print(power, 3);
   Serial.print(",");
-  Serial.print(uut.getBattChargeCurrent(),4);
+  Serial.print(uut.getBattChargeCurrent(), 3);
   Serial.print(",");
-  Serial.print(currentLimit,4);
+  Serial.print(currentLimit, 3);
   Serial.println("");
 
-  // Wait before the next loop iteration
-  // delay(__PERIOD__);
+  nCycles++;
 
-  window = false;                                               // Reset the window flag
+  // Wait before the next loop iteration
+  delay(__PERIOD__);
 }

@@ -86,10 +86,10 @@ class ISL9241{
 		ISL9241(uint8_t read_address = ISL9241_ADDRESS);
 		bool init(unsigned int NoOfCells = 2);
 		
-    bool writeRegister(uint16_t reg, uint16_t value);
+    	bool writeRegister(uint16_t reg, uint16_t value);
 		bool readRegister(uint16_t reg, uint16_t *value);
 
-    bool writeBit(uint16_t reg, uint8_t bit, bool value);
+   	 	bool writeBit(uint16_t reg, uint8_t bit, bool value);
 		bool readBit(uint16_t reg, uint8_t bit, bool *value);
 
 		float SetSysVoltage(float voltage);
@@ -104,8 +104,7 @@ class ISL9241{
 		float getBatteryVoltage();
 
 		float setAdapterCurrentLimit(float current);
-    float getAdapterCurrentLimit();
-
+    	float getAdapterCurrentLimit();
     
 		float setChargeCurrentLimit(float current);
 		float getChargeCurrentLimit();
@@ -119,7 +118,7 @@ class ISL9241{
 		float setAdapterCurrentLimit2(float current);
 		float getAdapterCurrentLimit2();
   
-    float setTricleChargeCurrent(TCCL_t lim);
+    	float setTricleChargeCurrent(TCCL_t lim);
 
 	private:
 		uint8_t _smb_address;

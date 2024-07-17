@@ -32,10 +32,10 @@ fprintf("Target Power is %2.3fW at index [%d]\n\n",max_power, max_power_index);
 [v,indx] = max(Voltage);
 
 t = 1:400;
-
 i = 1:400;
 p = 1:400;
 history = 1:400;
+SafeGuard = 1:400;
 
 for ind = 1:400
     v(ind) = Voltage(indx);
@@ -43,6 +43,12 @@ for ind = 1:400
     p(ind) = i(ind)*v(ind);
 
     history(ind) = indx;
+
+    if (v(ind) <= 7)
+        SafeGuard(ind) = (v(ind)-5)/2;
+    else
+        SafeGuard(ind) = 1;
+    end
 
     if ind == 1
         dv = v(ind);
@@ -70,25 +76,25 @@ for ind = 1:400
         indx = indx - 5*step;
     elseif dp > 0
         if dv > 0
-            indx = indx + 2*step;
+            indx = indx + 2*step*SafeGuard(ind);
         elseif dv < 0
-            indx = indx - 2*step;
+            indx = indx - 2*step*SafeGuard(ind);
         else 
-            indx = indx + step;
+            indx = indx + step*SafeGuard(ind);
         end
     elseif dp < 0
         if dv > 0
-            indx = indx - 2*step;
+            indx = indx - 2*step*SafeGuard(ind);
         elseif dv < 0
-            indx = indx + 2*step;
+            indx = indx + 2*step*SafeGuard(ind);
         else
-            indx = indx - step;
+            indx = indx - step*SafeGuard(ind);
         end
     else
         if dv >= 0
-            indx = indx - step;
+            indx = indx - step*SafeGuard(ind);
         else
-            indx = indx + step;
+            indx = indx + step*SafeGuard(ind);
         end
     end
 
@@ -116,6 +122,9 @@ subplot(3,1,3);
 plot(t,p); grid on;
 xlabel("n Cycles");
 ylabel("Power (W)");
+
+figure(4);
+plot(t,SafeGuard);
 
 %% Heatmap of algorithm
 

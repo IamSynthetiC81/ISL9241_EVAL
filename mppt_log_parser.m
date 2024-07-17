@@ -30,7 +30,7 @@ function lines = parseFile(filename, startString)
   lines = lines(start_index:end);
 end
 
-function [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines)
+function [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines, deg)
 
   min_current = NaN;
   max_current = NaN;
@@ -57,10 +57,6 @@ function [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(l
     elseif strcmp(line, '/#########') || strcmp(line, '/..........\\')
       startIndex = i+1;
     elseif length(strsplit(line, ',')) == 3
-      if isnan(startIndex)
-        continue;
-      end
-
       strsplitted = strsplit(line, ',');
       strsplitted{1,1} = strrep(strsplitted{1,1}, 'V', '');
       strsplitted{1,2} = strrep(strsplitted{1,2}, 'A', '');
@@ -109,12 +105,19 @@ end
 function parseData(filepattern)
   % Expand the wildcard pattern to get a list of filenames
   filenames = glob(filepattern);
-  
+  files = char(filenames);
+
+  disp(files(:,5:6));
+
   figure;
   
   for i = 1:length(filenames)
-    printf('Parsing file %s\n', filenames{i});
+    filename = filenames{i};
+    file = char(filename);  
+
+
     lines = parseFile(filenames{i}, '~=~=~=MPPT Charge Controller=~=~=~');
+    
     [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines);
 
     power = vi_curve_data(:,1) .* vi_curve_data(:,2);
@@ -127,41 +130,49 @@ function parseData(filepattern)
 
     figure(1);
     subplot(2,1,1);
-    plot(vi_curve_data(:,1), vi_curve_data(:,2));
+    plot(vi_curve_data(:,1), vi_curve_data(:,2), 'DisplayName',file(5:6));
     xlabel('Voltage (V)');
     ylabel('Current (A)');
     title('VI Curve');
     grid on; hold on;
+    legend();
 
     subplot(2,1,2);
-    plot(vi_curve_data(:,1), power);
+    plot(vi_curve_data(:,1), power, 'DisplayName',file(5:6));
     xlabel('Voltage (V)');
     ylabel('Power (W)');
     title('Power vs Voltage');
     grid on; hold on;
+    legend();
 
     figure(2);
     [samplingPeriod, Voltage, Current, Power] = parse_continous_data(lines);
     t = 0 : samplingPeriod : samplingPeriod*(length(Voltage)-1);
     
     subplot(3,1,1);
-    plot(t, Voltage); hold on; grid on;
+    plot(t, Voltage, 'DisplayName',file(5:6)); hold on; grid on;
     xlabel("Time (s)");
     ylabel("Voltage (V)");
+    legend();
 
     subplot(3,1,2);
-    plot(t, Current); hold on; grid on;
+    plot(t, Current, 'DisplayName',file(5:6)); hold on; grid on;
     xlabel("Time (s)");
     ylabel("Current (A)");
+    legend();
 
     subplot(3,1,3);
-    plot(t, Power); hold on; grid on;
+    plot(t, Power, 'DisplayName',file(5:6)); hold on; grid on;
     xlabel("Time (s)");
     ylabel("Power (W)");
-    
-
+    legend();
   end
+  
+  
+  
 end
+
+
 
 % Wrapper script to run parseData with command-line arguments
 

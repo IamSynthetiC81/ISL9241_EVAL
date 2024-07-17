@@ -24,16 +24,16 @@ void BlinkFatal();
 #define BATT_MAX_CHARGE_CURRENT   1.00                  // Maximum charge current
 
 /*     Program Frequency      */
-#define FREQ                      10                    // Frequency of the program in Hz
+#define FREQ                      10                   // Frequency of the program in Hz
                                                         // Change this value to the desired frequency
 #define __PERIOD__                (1000.0 / FREQ)
 
-#define PERTRUB_FREQ              100                   // Frequency for Perturbation as 1 action per n samples.
-#define PERTRUB_STEP_FACTOR       2                     // Step multiplier
+#define PERTRUB_FREQ              80                    // Frequency for Perturbation as 1 action per n samples.
+#define PERTRUB_STEP_FACTOR       3                     // Step multiplier
 uint64_t nCycles = 0;
 
 /*     Proportional Control  */
-#define P                 2.0
+#define P                 1.0
 #define Step              0.004
 
 /*    Delay definitions      */
@@ -43,7 +43,7 @@ uint64_t nCycles = 0;
 #define __T_DEL__                 10
 
 /*         Variables        */
-float currentLimit                = 0.012;  // Variable of change
+float currentLimit                = 0;  // Variable of change
 float previousPower               = 0;
 float previousVoltage             = 0;
 float SafeGuard                   = 1;
@@ -87,7 +87,7 @@ int VI_Curve(
   float maxCurrent = 5.68,
   float stepSize = 0.004,
   float MinVoltage = 5,
-  const unsigned int averaging_window = 10;
+  const unsigned int averaging_window = 10
 ){
   Serial.print(F("minimum current : "));
   Serial.println(minCurrent,3);
@@ -140,16 +140,19 @@ int VI_Curve(
     (*data)[i][1] = 0;
     for (int j = 0; j < averaging_window; j++ ){
       delay(__T_DEL_SHORT__);
-      (*data)[i][0] += uut.getAdapterVoltage()/averaging_window;
-      (*data)[i][1] += uut.getAdapterCurrent()/averaging_window;
+
+      float voltage = uut.getAdapterVoltage();
+      float current = uut.getAdapterCurrent();
+
+      (*data)[i][0] += voltage/averaging_window;
+      (*data)[i][1] += current/averaging_window;
     }
 
     size = i + 1;
 
-    if ((*data)[i][0] <= MinVoltage) break;
+    if ((*data)[i][0] <= MinVoltage) {break;}
 
   }
-
   return size;
 }
 /** Set up the hardware timer1 to run at a specific frequency
@@ -190,36 +193,26 @@ float algorithm_P_AND_O(float dv, float dp, float currentLimit, float step = 0.0
       currentLimit += P*SafeGuard*step;
       Serial.print(F("+1,"));
     } else if (dv < 0){ 
-      currentLimit -= P*SafeGuard*step;
+      currentLimit -= P*step;
       Serial.print(F("-1,"));
-    } else {
-      currentLimit += P*SafeGuard*step/2;
+    }else {
       Serial.print(F(" 1,"));
     }
   } else if (dp < 0){
     if(dv > 0){       
-      currentLimit -= P*SafeGuard*step;
+      currentLimit -= P*step;
       Serial.print(F("+2,"));
     }
     else if (dv < 0){ 
       currentLimit += P*SafeGuard*step;
       Serial.print(F("-2,"));
-    } else {
-      currentLimit -= P*SafeGuard*step;
+    }else {
       Serial.print(F(" 2,"));
     }
   } else {
-    
-    if (dp >= 0){
-      Serial.print(F("+0,"));
-      currentLimit += P*SafeGuard*step/2;
-    } else {
-      Serial.print(F("-0,"));
-      currentLimit -= P*SafeGuard*step/2;
-    }
-       
+    Serial.print(F(" 0,"));
+    // currentLimit -= P*step;
   }
-
   return currentLimit;
 }
 
@@ -256,15 +249,16 @@ void setup() {
 
   float stepSize = 0.004;
   float minCurrent = 0;
-  float maxCurrent = 1;
+  float maxCurrent = 0.2;
   float minVoltage = ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD;
   unsigned int averaging = 10;
 
   float** curve;
   int size = VI_Curve(&curve, minCurrent, maxCurrent, stepSize, minVoltage, averaging);
-  if (size <= 0) perror_fatal("VI curve error");
   
-
+  Serial.println(String("Size is -: ") + size);
+  if (size <= 0){ perror_fatal("VI curve error");}
+  
   for(int i = 0 ; i < size ; i++ ){
     Serial.print(curve[i][0], 3);
     Serial.print("V, ");
@@ -295,7 +289,7 @@ void loop() {
   float current = uut.getAdapterCurrent(); 
 
   /* ~=~=~=MIN VOLTAGE GUARD=~=~=~ */
-  if (voltage < ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD) {
+  if (voltage < ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD + 1) {
     SafeGuard = -(voltage - ISL9241_MIN_OPERATING_VOLTAGE) / (ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD - ISL9241_MIN_OPERATING_VOLTAGE);
   } else {
     SafeGuard = 1;
@@ -308,9 +302,10 @@ void loop() {
 
   // Maximum Power Point Tracking (MPPT) algorithm implementation
   // Perturb and Observe (P&O) algorithm
-  if((nCycles % PERTRUB_FREQ) == PERTRUB_FREQ){
-    Serial.print(F(" P,"));
+  if(nCycles == PERTRUB_FREQ){
+    Serial.print(F(" \nP,"));
     currentLimit += PERTRUB_STEP_FACTOR * Step;
+    nCycles = 0;
   } else {
     currentLimit = algorithm_P_AND_O(deltaV,deltaP, currentLimit, Step);
   }

@@ -124,7 +124,7 @@ float ISL9241::SetSysVoltage(float voltage) {
 
 float ISL9241::GetSysVoltage() {
 	uint16_t value;
-	readRegister(MaxSystemVoltage, &value);
+	readRegister(VSYS_ADC_Result, &value);
 
 	// mask for bits 13:6
 	uint16_t mask = 0x3FC0;
@@ -288,6 +288,23 @@ float ISL9241::setTricleChargeCurrent(TCCL_t lim) {
 	return (reg >> 2) * 4e-3;
 }
 
+/**
+ * @brief Indicates the ISL9241 state machine status.
+ * 
+ * @note The state machine status is bits 8-11 from register Information2 at 0x4D.
+ * @relates ISL9241::Information2
+ * @return uint8_t 
+ */
+StateMachineStatus_t ISL9241::getStateMachineStatus() {
+	uint16_t value;
+	readRegister(Information2, &value);
 
+	// mask for bits 11:8
+	uint16_t mask = 0x0F00;
+
+	value = (value & mask) >> 8;
+
+	return (StateMachineStatus_t)value;
+}
 
 

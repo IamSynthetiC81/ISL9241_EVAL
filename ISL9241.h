@@ -81,6 +81,28 @@ enum TCCL_t {
 	TC_256mA = 6,
 };
 
+/**
+ * @brief Indicates the ISL9241 state machine status
+ * 
+ * @see Information2 at 0x4D page 39 out of 75.
+ * @link https://www.farnell.com/datasheets/2710985.pdf
+ */
+enum StateMachineStatus_t{
+	RESET = 0,
+	INTERNAL_WAKE_UP_1 = 1,
+	AUTO_CHARGE = 2,
+	INTERNAL_WAKE_UP_2 = 3,
+	BATT_ONLY = 4,
+	INTERNAL_WAKE_UP_3 = 5, 
+	SMB_CHARGE = 6,
+	FAULT = 7,
+	INTERNAL_WAKE_UP_4 = 8,
+	OTG = 9,
+	READY = 10,
+	INTERNAL_WAKE_UP_5 = 11,
+	VSYS = 12,
+};
+
 class ISL9241{
 	public:
 		ISL9241(uint8_t read_address = ISL9241_ADDRESS);
@@ -97,7 +119,7 @@ class ISL9241{
 
 		float getBattDischargeCurrent();
 		float getBattChargeCurrent();
-		float getSysVoltage();
+
 		float getAdapterVoltage();
 		float getAdapterCurrent();
 
@@ -119,6 +141,8 @@ class ISL9241{
 		float getAdapterCurrentLimit2();
   
     	float setTricleChargeCurrent(TCCL_t lim);
+
+		StateMachineStatus_t getStateMachineStatus();
 
 	private:
 		uint8_t _smb_address;

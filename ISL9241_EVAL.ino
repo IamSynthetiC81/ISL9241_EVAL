@@ -22,6 +22,7 @@ void BlinkFatal();
 #define BATT_LOWER_VOLTAGE_LIMIT  2.8                   // Lower voltage limit     
 #define BATT_UPPER_VOLTAGE_LIMIT  3.2                   // Upper voltage limit
 #define BATT_MAX_CHARGE_CURRENT   1.00                  // Maximum charge current
+#define BATT_MAX_CHARGE_POWER BATT_UPPER_VOLTAGE_LIMIT*BATT_MAX_CHARGE_CURRENT
 
 /*     Program Frequency      */
 #define FREQ                      10                   // Frequency of the program in Hz
@@ -50,6 +51,13 @@ float SafeGuard                   = 1;
 
 bool window                       = false;
 unsigned long startTime           = 0;
+
+enum BatteryState_t{
+  CHARGING,
+  DISCHARGING,
+  FULL
+};
+
 
 // Device under test
 ISL9241 uut;
@@ -254,21 +262,21 @@ void setup() {
   unsigned int averaging = 10;
 
   float** curve;
-  int size = VI_Curve(&curve, minCurrent, maxCurrent, stepSize, minVoltage, averaging);
+  // int size = VI_Curve(&curve, minCurrent, maxCurrent, stepSize, minVoltage, averaging);
   
-  Serial.println(String("Size is -: ") + size);
-  if (size <= 0){ perror_fatal("VI curve error");}
+  // Serial.println(String("Size is -: ") + size);
+  // if (size <= 0){ perror_fatal("VI curve error");}
   
-  for(int i = 0 ; i < size ; i++ ){
-    Serial.print(curve[i][0], 3);
-    Serial.print("V, ");
-    Serial.print(curve[i][1],3);
-    Serial.print("A, ");
-    Serial.print(i*stepSize,3);
-    Serial.print("A\n");
-  }
+  // for(int i = 0 ; i < size ; i++ ){
+  //   Serial.print(curve[i][0], 3);
+  //   Serial.print("V, ");
+  //   Serial.print(curve[i][1],3);
+  //   Serial.print("A, ");
+  //   Serial.print(i*stepSize,3);
+  //   Serial.print("A\n");
+  // }
   uut.setAdapterCurrentLimit(0);
-  free(curve);
+  // free(curve);
 
   Serial.println("\n\n\tSETUP COMPLETE !! \n");
   
@@ -295,42 +303,179 @@ void loop() {
     SafeGuard = 1;
   }
 
-  float power = voltage*current;
+  // float power = voltage*current;
   
-  float deltaV = voltage - previousVoltage;
-  float deltaP = power - previousPower;
+  // float deltaV = voltage - previousVoltage;
+  // float deltaP = power - previousPower;
 
-  // Maximum Power Point Tracking (MPPT) algorithm implementation
-  // Perturb and Observe (P&O) algorithm
-  if(nCycles == PERTRUB_FREQ){
-    Serial.print(F(" \nP,"));
-    currentLimit += PERTRUB_STEP_FACTOR * Step;
-    nCycles = 0;
-  } else {
-    currentLimit = algorithm_P_AND_O(deltaV,deltaP, currentLimit, Step);
-  }
+  // // Maximum Power Point Tracking (MPPT) algorithm implementation
+  // // Perturb and Observe (P&O) algorithm
+  // if(nCycles == PERTRUB_FREQ){
+  //   Serial.print(F(" \nP,"));
+  //   currentLimit += PERTRUB_STEP_FACTOR * Step;
+  //   nCycles = 0;
+  // } else {
+  //   currentLimit = algorithm_P_AND_O(deltaV,deltaP, currentLimit, Step);
+  // }
 
-  if (currentLimit < 0) currentLimit = 0.0;     // Lower limit check
-  if (currentLimit > 2) currentLimit = 1.0;     // Upper limit check
-  uut.setAdapterCurrentLimit(currentLimit);     // Set the new current limit
+  // if (currentLimit < 0) currentLimit = 0.0;     // Lower limit check
+  // if (currentLimit > 2) currentLimit = 1.0;     // Upper limit check
+  // uut.setAdapterCurrentLimit(currentLimit);     // Set the new current limit
 
-  previousPower = power;                        // Update the previous power
-  previousVoltage = voltage;                    // Update the previous voltage
+  // previousPower = power;                        // Update the previous power
+  // previousVoltage = voltage;                    // Update the previous voltage
 
-  // Print values
-  Serial.print(voltage, 3);
-  Serial.print(",");
-  Serial.print(current, 4);
-  Serial.print(",");
-  Serial.print(power, 3);
-  Serial.print(",");
-  Serial.print(uut.getBattChargeCurrent(), 3);
-  Serial.print(",");
-  Serial.print(currentLimit, 3);
-  Serial.println("");
+  // // Print values
+  // Serial.print(voltage, 3);
+  // Serial.print(",");
+  // Serial.print(current, 4);
+  // Serial.print(",");
+  // Serial.print(power, 3);
+  // Serial.print(",");
+  // Serial.print(uut.getBattChargeCurrent(), 3);
+  // Serial.print(",");
+  // Serial.print(currentLimit, 3);
+  // Serial.println("");
 
-  nCycles++;
+  // nCycles++;
+
+  asd();
 
   // Wait before the next loop iteration
   delay(__PERIOD__);
+}
+
+void adapterMPPT(){
+  float voltage = uut.getAdapterVoltage();
+  float current = uut.getAdapterCurrent();
+
+  float power = voltage * current;
+  float deltaP = power - previousPower;
+
+  if (deltaP >= 0){
+    currentLimit += 0.04;
+    Serial.print("Increasing current");
+  } else if (deltaP < 0){
+    currentLimit -= 0.004;
+    Serial.print("Decreasing current");
+  }
+
+  if (currentLimit < 0){
+    currentLimit = 0.0;
+  }
+  
+  uut.setAdapterCurrentLimit(currentLimit);
+
+  previousVoltage = voltage;
+  previousPower = power;  
+}
+
+void batteryMPPT(){
+  float voltage = uut.getBatteryVoltage();
+  float current = uut.getBattChargeCurrent();
+
+  float power = voltage * current;
+  float deltaP = power - previousPower;
+
+  if (deltaP > 0){
+    current += 0.004;
+  } else if (deltaP < 0){
+    current -= 0.004;
+  }
+
+  if (current < 0) current = 0.0;
+  
+  uut.setChargeCurrentLimit(current);
+
+  previousVoltage = voltage;
+  previousPower = power;  
+}
+
+void systemMPPT(){
+  float voltage = uut.GetSysVoltage();
+  float current = uut.getAdapterCurrent();
+
+  float power = voltage * current;
+  float deltaP = power - previousPower;
+
+  if (deltaP > 0){
+    current += 0.004;
+  } else if (deltaP < 0){
+    current -= 0.004;
+  }
+
+  if (current < 0) current = 0.0;
+  
+  //TODO : Change this to the correct function
+  uut.setAdapterCurrentLimit(current);
+
+  previousVoltage = voltage;
+  previousPower = power;  
+}
+
+void asd(){
+  float adapterVoltage = uut.getAdapterVoltage();
+  float adapterCurrent = uut.getAdapterCurrent();
+
+  float batteryVoltage = uut.getBatteryVoltage();
+  float batteryChargeCurrent = uut.getBattChargeCurrent();
+  float batteryDischargeCurrent = uut.getBattDischargeCurrent();
+
+  float systemVoltage = uut.GetSysVoltage();
+  
+  float adapterPower = adapterVoltage * adapterCurrent;
+  float batteryChargePower = batteryVoltage * batteryChargeCurrent;
+  float batteryDischargePower = batteryVoltage * batteryDischargeCurrent;
+  float systemPower = adapterPower - batteryChargePower + batteryDischargePower; // This formula does not take into account the power consumed by the system
+
+  if(adapterVoltage < 0 || adapterCurrent < 0 || batteryVoltage < 0 || batteryChargeCurrent < 0 || batteryDischargeCurrent < 0 || systemVoltage < 0){
+    perror("Invalid value");
+    return;
+  }
+
+  BatteryState_t batteryState = (batteryVoltage < BATT_LOWER_VOLTAGE_LIMIT*2) ? DISCHARGING : (batteryVoltage >= BATT_UPPER_VOLTAGE_LIMIT*2) ? FULL : CHARGING;
+
+  if (batteryState == CHARGING){
+    if (batteryChargeCurrent >= BATT_MAX_CHARGE_CURRENT){                                           // CC mode
+      if (adapterPower >= BATT_MAX_CHARGE_POWER){                                                   
+        // mmpt on system voltage
+        systemMPPT();
+      } else {
+        // mppt on charge current
+        batteryMPPT();
+      }
+    } else {                                                                                        // CV mode
+      // mppt on adapter
+      adapterMPPT();
+    }
+  } else if (batteryState == DISCHARGING || batteryState == FULL){
+    // mppt on adapter current
+    adapterMPPT();
+  }
+
+  // Print values
+  Serial.print(adapterVoltage, 3);
+  Serial.print(",");
+  Serial.print(adapterCurrent, 4);
+  Serial.print(",");
+  Serial.print(adapterPower, 3);
+  Serial.print(",");
+  Serial.print(batteryVoltage, 3);
+  Serial.print(",");
+  Serial.print(batteryChargeCurrent, 3);
+  Serial.print(",");
+  Serial.print(batteryDischargeCurrent, 3);
+  Serial.print(",");
+  Serial.print(systemVoltage, 3);
+  Serial.print(",");
+  Serial.print(systemPower, 3);
+  Serial.print(",");
+  if(batteryState == CHARGING){
+    Serial.print("CHARGING");
+  } else if (batteryState == DISCHARGING){
+    Serial.print("DISCHARGING");
+  } else {
+    Serial.print("FULL");
+  }
+  Serial.println("");
 }

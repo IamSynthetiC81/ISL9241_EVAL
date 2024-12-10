@@ -90,7 +90,7 @@ function [samplingPeriod, Voltage, Current, Power] = parse_continous_data(lines)
 
     elseif length(strsplit(line, ',')) == 6
       strsplitted = strsplit(line, ',');
-      
+
       Voltage(dataIndex) = str2num(strsplitted{2});
       Current(dataIndex) = str2num(strsplitted{3});
       Power(dataIndex) = str2num(strsplitted{4});
@@ -107,22 +107,22 @@ function parseData(filepattern)
   filenames = glob(filepattern);
   files = char(filenames);
 
-  disp(files(:,5:6));
+  disp(files);
 
   figure;
-  
+
   for i = 1:length(filenames)
     filename = filenames{i};
-    file = char(filename);  
+    file = char(filename);
 
 
     lines = parseFile(filenames{i}, '~=~=~=MPPT Charge Controller=~=~=~');
-    
+
     [min_current, max_current, step_size, vi_curve_data] = parse_vi_curve(lines);
 
     power = vi_curve_data(:,1) .* vi_curve_data(:,2);
     [max_power,max_power_index] = max(power);
-    
+
     printf('Max Power %d : %2.3fW\n',i, max_power);
     printf('Voltage %d : %2.3fV\n', i, vi_curve_data(max_power_index, 1));
     printf('Current %d : %2.3fA\n', i, vi_curve_data(max_power_index, 2));
@@ -148,7 +148,7 @@ function parseData(filepattern)
     figure(2);
     [samplingPeriod, Voltage, Current, Power] = parse_continous_data(lines);
     t = 0 : samplingPeriod : samplingPeriod*(length(Voltage)-1);
-    
+
     subplot(3,1,1);
     plot(t, Voltage, 'DisplayName',file(5:6)); hold on; grid on;
     xlabel("Time (s)");
@@ -167,9 +167,9 @@ function parseData(filepattern)
     ylabel("Power (W)");
     legend();
   end
-  
-  
-  
+
+
+
 end
 
 
@@ -177,7 +177,7 @@ end
 % Wrapper script to run parseData with command-line arguments
 
 % Get the file pattern from the first argument
-filepattern = argv();
+filepattern = "/log";
 
 % Call the parseData function with the file pattern
 parseData(filepattern);

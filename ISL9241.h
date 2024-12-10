@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <Wire.h>
+#include <string.h>
 
 #define ISL9241_MIN_OPERATING_VOLTAGE 3.9
 #ifndef ISL9241_MIN_OPERATING_VOLTAGE_THRESHOLD
@@ -66,7 +67,27 @@
 #define SYS_VOLTAGE_ADC_LSB 96e-3
 #define VIN_ADC_LSB 96e-3
 
+#define DAC_CHARGE_CURRENT_LIMIT_LSB 4e-3
+#define DAC_SYSTEM_MAX_VOLTAGE_LSB 8e-3
+#define DAC_SYSTEM_MIN_VOLTAGE_LSB 64e-3
+#define DAC_ADAPTER_CURRENT_LIMIT_LSB 4e-3
+#define DAC_ADAPTER_CURRENT_LIMIT2_LSB 4e-3
+#define DAC_ADP_MIN_VOLTAGE_LSB 85e-3
+
 #define ADAPTER_CURRENT_LIMIT_LSB_VAL 4e-3
+#define SYSTEM_MAX_VOLTAGE 18.304
+
+// enum Error_t{
+// 	NO_ERROR = 0,
+// 	DEVICE_NOT_FOUND = 1,
+// 	REGISTER_WRITE_ERROR = 2,
+// 	REGISTER_READ_ERROR = 3,
+// 	REGISTER_BIT_WRITE_ERROR = 4,
+// 	REGISTER_BIT_READ_ERROR = 5,
+// 	INVALID_PARAMETER = 6
+// };
+// char error_s[64];
+// Error_t error_t;
 
 /**
 * Tricle_Charge_Current_Limit
@@ -106,7 +127,7 @@ enum StateMachineStatus_t{
 class ISL9241{
 	public:
 		ISL9241(uint8_t read_address = ISL9241_ADDRESS);
-		bool init(unsigned int NoOfCells = 2);
+		bool init(unsigned int NoOfCells = 2, float minBattVoltage = 2.8, float maxBattVoltage = 3.2);
 		
     	bool writeRegister(uint16_t reg, uint16_t value);
 		bool readRegister(uint16_t reg, uint16_t *value);
@@ -141,6 +162,8 @@ class ISL9241{
 		float getAdapterCurrentLimit2();
   
     	float setTricleChargeCurrent(TCCL_t lim);
+
+		bool setNGATE(bool value);
 
 		StateMachineStatus_t getStateMachineStatus();
 

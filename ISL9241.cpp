@@ -1,48 +1,36 @@
 #include "ISL9241.h"    
-#include <Arduino.h>
 
 ISL9241::ISL9241(uint8_t read_address = ISL9241_ADDRESS) {
 	_smb_address = read_address;
 }
 
-bool ISL9241::init(unsigned int NoOfCells = 2) {
+bool ISL9241::init(unsigned int NoOfCells = 2, float minBattVoltage = 2.8, float maxBattVoltage = 3.2) {
   Wire.begin();
+
+	if (NoOfCells < 2 || NoOfCells > 4) {
+		// strcpy(ISL9241::error_s,"ISL9241 supports 2,3 and 4 batteries in series\n");
+		// error_t = Error_t::INVALID_PARAMETER;
+		return false;
+	}
+
+	if(NoOfCells*minBattVoltage > SYSTEM_MAX_VOLTAGE || NoOfCells*maxBattVoltage > SYSTEM_MAX_VOLTAGE) {
+    // strcpy(error_s,"Battery configuration exceeds maximum system voltage\n");
+		// error_t = Error_t::INVALID_PARAMETER;
+		return false;
+	}
 
 	// Check if the device is connected
 	uint16_t value;
-	readRegister(DeviceID, &value);
-	if (value != 0x9241) {
-		// return false;
-	}
-
-	writeRegister(AdapterCurrentLimit1, 0x01D4);		// 0.468A
-	writeRegister(ChargeCurrentLimit	, 0x07D0);		// 2.000 A
-
-	switch (NoOfCells)
-	{
-	case 2:
-		writeRegister(MaxSystemVoltage		, 0x20C0);		// 8.384 V
-		writeRegister(MinSystemVOltage		, 0x5400);		// 4.376 V
-		break;
-	case 3:
-		writeRegister(MaxSystemVoltage		, 0x3120);		// 12.576 V
-		writeRegister(MinSystemVOltage		, 0x1C00);		// 07.168 V
-		break;
-	case 4:
-		writeRegister(MaxSystemVoltage		, 0x4180);		// 16.768 V
-		writeRegister(MinSystemVOltage		, 0x2700);		// 10.000 V
-		break;
-	
-	default:
+	if(!readRegister(DeviceID, &value) || value != 0x000E) {
+    // strcpy(error_s,"Device not found\n");
+		// error_t = Error_t::DEVICE_NOT_FOUND;
 		return false;
-		break;
 	}
+	
+	if(setMaxSystemVoltage(NoOfCells*maxBattVoltage) == -1 || setMinSystemVoltage(NoOfCells*minBattVoltage) == -1) /*return false;*/
 
 	// enable adc for all modes
-	writeBit(Control3, 0, true);
-	
-
-  return true;
+	return writeBit(Control3, 0, true);
 }
 
 /**
@@ -53,7 +41,14 @@ bool ISL9241::writeRegister(uint16_t reg, uint16_t value) {
 	Wire.write(reg);
 	Wire.write(value & 0x00FF);
 	Wire.write((value >> 8) & 0x00FF);
-	return Wire.endTransmission() == 0;
+	
+	if(Wire.endTransmission() != 0) {
+		// strcpy(error_s, "Could not write to register\n");
+		// error_t = Error_t::REGISTER_WRITE_ERROR;
+		return false;
+	}
+
+	return true;
 }
 
 /**
@@ -63,26 +58,29 @@ bool ISL9241::readRegister(uint16_t reg, uint16_t *value) {
 	Wire.beginTransmission(_smb_address);
 	Wire.write(reg);
 	if (Wire.endTransmission() != 0) {
-    Serial.println("Nope");
+		// strcpy(error_s, "Could initiate read from register\n");
+		// error_t = Error_t::REGISTER_READ_ERROR;
 		return false;
 	}
   
 
 	Wire.requestFrom(_smb_address, 2);
 	if (Wire.available() < 2) {
-    Serial.println("Balls");
+		// strcpy(error_s, "Data requested not available\n");
+		// error_t = Error_t::REGISTER_READ_ERROR;
 		return false;
 	}
 
 	uint8_t lowByte = Wire.read();
 	uint8_t highByte = Wire.read();
-
-  // Serial.print("Low byte : ");
-	// Serial.println(lowByte);
-	// Serial.print("High byte : ");
-	// Serial.println(highByte);
   
 	*value = (highByte << 8) | lowByte;
+
+	if(Wire.endTransmission() != 0){
+		// strcpy(error_s, "Transmission error\n");
+		// error_t = Error_t::REGISTER_READ_ERROR;
+		return false;
+	}
 
 	return true;
 }
@@ -124,7 +122,7 @@ float ISL9241::SetSysVoltage(float voltage) {
 
 float ISL9241::GetSysVoltage() {
 	uint16_t value;
-	readRegister(VSYS_ADC_Result, &value);
+	if(readRegister(VSYS_ADC_Result, &value)) return -1;
 
 	// mask for bits 13:6
 	uint16_t mask = 0x3FC0;
@@ -136,9 +134,9 @@ float ISL9241::GetSysVoltage() {
 
 float ISL9241::getAdapterCurrent() {
 	uint16_t value;
-	readRegister(IADP_ADC_Results, &value);
+	if (!readRegister(IADP_ADC_Results, &value)) return -1;
 
-  int8_t mask = 0xff;
+  	int8_t mask = 0xff;
 
 	return ((value & mask) * IADP_ADC_LSB);
 }
@@ -149,14 +147,14 @@ float ISL9241::getAdapterVoltage() {
 	// mask for bits 13:6
 	uint16_t mask = 0x3FC0;
 
-	readRegister(VIN_ADC_Result, &value);
+	if (!readRegister(VIN_ADC_Result, &value)) return -1;
 	value = (value & mask) >> 6;
 	return value * VIN_ADC_LSB;
 }
 
 float ISL9241::getBattDischargeCurrent() {
 	uint16_t value;
-	readRegister(DC_ADC_Results, &value);
+	if (!readRegister(DC_ADC_Results, &value)) return -1;
 
 	// mask for bits 7:0
 
@@ -165,7 +163,7 @@ float ISL9241::getBattDischargeCurrent() {
 
 float ISL9241::getBattChargeCurrent() {
 	uint16_t value;
-	readRegister(CC_ADC_Result, &value);
+	if(!readRegister(CC_ADC_Result, &value)) return -1;
 
 	// mask for bits 7:0
 
@@ -174,7 +172,7 @@ float ISL9241::getBattChargeCurrent() {
 
 float ISL9241::getBatteryVoltage() {
 	uint16_t value;
-	readRegister(VBAT_ADC_Results, &value);
+	if(!readRegister(VBAT_ADC_Results, &value)) return -1;
 
 	// mask for bits 13:6
 	uint16_t mask = 0x3FC0;
@@ -187,18 +185,19 @@ float ISL9241::setAdapterCurrentLimit(float current) {
   if (current < 0 ) return false;
 
 	uint16_t reg = (uint16_t)(current / ADAPTER_CURRENT_LIMIT_LSB_VAL);
-  if(reg > (2 << 10)) reg = 2 << 10;
+  	if(reg > (2 << 10)) reg = 2 << 10;
 
-	writeRegister(AdapterCurrentLimit1, reg << 2);
+	if(!writeRegister(AdapterCurrentLimit1, reg << 2))
+		return -1;
 
 	return reg*ADAPTER_CURRENT_LIMIT_LSB_VAL;
 }
 
 float ISL9241::getAdapterCurrentLimit() {
 	uint16_t value;
-	readRegister(AdapterCurrentLimit1, &value);
+	if(!readRegister(AdapterCurrentLimit1, &value)) return -1;
 
-  // mask for bits 12:2
+  	// mask for bits 12:2
 	uint16_t mask = 0x1FFC;
 
 	value = (value & mask) >> 2;
@@ -209,14 +208,15 @@ float ISL9241::getAdapterCurrentLimit() {
 float ISL9241::setChargeCurrentLimit(float current) {
 	uint16_t reg = (uint16_t)(current / ADAPTER_CURRENT_LIMIT_LSB_VAL) << 2;
 
-	writeRegister(ChargeCurrentLimit, reg);
+	if(!writeRegister(ChargeCurrentLimit, reg))
+		return -1;
 
 	return (reg >> 2) * ADAPTER_CURRENT_LIMIT_LSB_VAL;
 }
 
 float ISL9241::getChargeCurrentLimit() {
 	uint16_t value;
-	readRegister(ChargeCurrentLimit, &value);
+	if(!readRegister(ChargeCurrentLimit, &value)) return -1;
 
 	// mask for bits 12:2
 	uint16_t mask = 0x1FFC;
@@ -229,14 +229,15 @@ float ISL9241::getChargeCurrentLimit() {
 float ISL9241::setMaxSystemVoltage(float voltage) {
 	uint16_t voltage_reg = (uint16_t)(voltage / 8e-3) << 3;
 	
-	writeRegister(MaxSystemVoltage, voltage_reg);
+	if(!writeRegister(MaxSystemVoltage, voltage_reg))
+		return -1;
 
 	return (voltage_reg >> 3) * 8e-3;
 }
 
 float ISL9241::getMaxSystemVoltage() {
 	uint16_t value;
-	readRegister(MaxSystemVoltage, &value);
+	if(!readRegister(MaxSystemVoltage, &value)) return -1;
 
 	// mask for bits 14:3
 	uint16_t mask = 0x3FF8;
@@ -247,14 +248,15 @@ float ISL9241::getMaxSystemVoltage() {
 float ISL9241::setMinSystemVoltage(float voltage) {
 	uint16_t reg = (uint16_t)(voltage / 64e-3) << 6;
 
-	writeRegister(MinSystemVOltage, reg);
+	if(!writeRegister(MinSystemVOltage, reg))
+		return -1;
 
 	return (reg >> 6) * 64e-3;
 }
 
 float ISL9241::getMinSystemVoltage() {
 	uint16_t value;
-	readRegister(MinSystemVOltage, &value);
+	if(!readRegister(MinSystemVOltage, &value)) return -1;
 
 	// mask for bits 13:6
 	uint16_t mask = 0x3FC0;
@@ -265,14 +267,15 @@ float ISL9241::getMinSystemVoltage() {
 
 float ISL9241::setAdapterCurrentLimit2(float current) {
 	uint16_t reg = (uint16_t)(current / 4e-3) << 3;
-	writeRegister(AdapterCurrentLimit2, reg);
+	if(!writeRegister(AdapterCurrentLimit2, reg))
+		return -1;
 
 	return (reg >> 3) * 4e-3;
 }
 
 float ISL9241::getAdapterCurrentLimit2() {
 	uint16_t value;
-	readRegister(AdapterCurrentLimit2, &value);
+	if(!readRegister(AdapterCurrentLimit2, &value)) return -1;
 
 	// mask for bits 12:2
 	uint16_t mask = 0x1FFC;
@@ -283,9 +286,21 @@ float ISL9241::getAdapterCurrentLimit2() {
 
 float ISL9241::setTricleChargeCurrent(TCCL_t lim) {
 	uint16_t reg = (uint16_t)lim << 2;
-	writeRegister(ChargeCurrentLimit, reg);
+	if(!writeRegister(ChargeCurrentLimit, reg))
+		return -1;
 
 	return (reg >> 2) * 4e-3;
+}
+
+/**
+ * @brief Enable or disable the NGATE which cuts off the battery from the system.
+ * 
+ * @param value Set to true to disconect the battery from the system.
+ * @return true if the operation was successful. 
+ * @return false if the operation failed. 
+ */
+bool ISL9241::setNGATE(bool value) {
+	return writeBit(Control1, 12, value);
 }
 
 /**
@@ -297,7 +312,7 @@ float ISL9241::setTricleChargeCurrent(TCCL_t lim) {
  */
 StateMachineStatus_t ISL9241::getStateMachineStatus() {
 	uint16_t value;
-	readRegister(Information2, &value);
+	if(!readRegister(Information2, &value)) return RESET;
 
 	// mask for bits 11:8
 	uint16_t mask = 0x0F00;

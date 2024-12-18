@@ -35,12 +35,17 @@ void BlinkFatal(){
                                                         // the number of batteries in series
 #if ISL9241_BATT_NUM < 2
   #error "Invalid param ISL9241_BATT_NUM"
-
 #endif
+
 /*   Battery characteristics  */
 #define BATT_LOWER_VOLTAGE_LIMIT  2.8                   // Lower voltage limit     
 #define BATT_UPPER_VOLTAGE_LIMIT  3.2                   // Upper voltage limit
+#if BATT_UPPER_VOLTAGE_LIMIT <= BATT_LOWER_VOLTAGE_LIMIT 
+  #error "Invalid param BATT_LOWER_VOLTAGE_LIMIT & BATT_UPPER_VOLTAGE_LIMIT"
+#endif
+
 #define BATT_MAX_CHARGE_CURRENT   3.00                  // Maximum charge current
+
 
 /*     Program Frequency      */
 #define FREQ                      5                     // Frequency of the program in Hz

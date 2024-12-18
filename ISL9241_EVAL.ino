@@ -8,18 +8,6 @@
 
 #define PERFORM_VI_CURVE 1
 unsigned long RUNTIME = 120;
-#define V_SUPPLY_CORRECTION_HARDWARE 1                  /* Supply voltage correction hardware 
-                                                        * 0 - No correction -- Assumes 5V
-                                                        * 1 - Correction hardware present
-                                                        */
-#if V_SUPPLY_CORRECTION_HARDWARE                        
-  float V_SUPPLY = -1.0;                                // Supply voltage
-  #define V_SUPPLY_ATTENUATION 0.180173092053501180173  // Attenuation factor
-  #define V_SUPPLY_MEAS_PIN A1                          // Supply voltage measurement pin           
-  #define V_SUPPLY_CORRECTION_PERIOD 4000              // Supply voltage correction period in ms 
-#else
-  float V_SUPPLY = 5.0;                                 // Supply voltage -- Assumes 5V
-#endif
 
 /**
  * @brief Blink the LED on the board indefinitely to indicate a fatal error.
@@ -87,6 +75,13 @@ unsigned long startTime           = 0;
 // Device under test
 ISL9241 uut;
 
+/**
+ * @brief Τake n measurements and return the average value
+ * 
+ * @param n The number of measurements to take
+ * @param delay_ms The delay between measurements in milliseconds
+ * @return float The average value of the measurements
+ */
 float averageVoltageMeasurement(int n = 10,  unsigned int delay_ms = 1){
   float sum = 0;
   for (int i = 0; i < n; i++){
@@ -101,6 +96,13 @@ float averageVoltageMeasurement(int n = 10,  unsigned int delay_ms = 1){
   return sum / n;
 }
 
+/**
+ * @brief Take n measurements and return the average value
+ * 
+ * @param n The number of measurements to take
+ * @param delay_ms The delay between measurements in milliseconds
+ * @return float The average value of the measurements
+ */
 float averageCurrentMeasurement(int n = 10,  unsigned int delay_ms = 1){
   float sum = 0;
   for (int i = 0; i < n; i++){
@@ -114,45 +116,11 @@ float averageCurrentMeasurement(int n = 10,  unsigned int delay_ms = 1){
   return sum / n;
 }
 
-uint16_t averageAnalogRead(uint8_t pin, uint8_t n = 10, uint8_t delay_ms = 1){
-  uint64_t sum = 0;
-  for (int i = 0; i < n; i++){
-    uint16_t val = analogRead(pin);
-    sum += val;
-    delay(delay_ms);
-  }
-  
-  // Convert to voltage
-  return ((double)sum / n);
-}
-
-void SupplyVoltageCorrection(bool verbose = false){
-  analogReference(INTERNAL1V1);
-  delay(100);
-  uint16_t meas = averageAnalogRead(V_SUPPLY_MEAS_PIN);
-  analogReference(DEFAULT);
-
-  float VoltageSensed = (meas*1.1/1023.0);
-
-  if (verbose){
-    Serial.print("Voltage sensed : ");
-    // Serial.println(VoltageSensed, 3);
-    Serial.println(meas);
-  }
-  
-  V_SUPPLY = VoltageSensed/V_SUPPLY_ATTENUATION;
-
-  if (verbose){
-    Serial.print("V_SUPPLY : ");
-    Serial.println(V_SUPPLY, 3);
-  }
-}
-
 /**
  * @brief Configure a timer to generate an interrupt every period
  * 
  * @param period_ms The period of the timer in milliseconds
- * @note The user must define his own ISR for the timer
+ * @warning The user must define his own ISR for the timer
  * @note this function is applicable for Timer1, Timer3, Timer4 and Timer5 only
  */
 bool Timer_Init(uint8_t timer_number, uint16_t period_ms) {
@@ -288,12 +256,6 @@ bool Timer_Init(uint8_t timer_number, uint16_t period_ms) {
 ISR(TIMER1_COMPA_vect){
   window = true;
 }
-
-#if V_SUPPLY_CORRECTION_HARDWARE 
-  ISR(TIMER3_COMPA_vect){
-    SupplyCorrection = true;
-  }
-#endif
 
 /**
  * @brief Generate a VI curve
@@ -474,7 +436,7 @@ void setup() {
   uut.setTricleChargeCurrent(TCCL_t::TC_256mA);
 
   uut.setChargeCurrentLimit(BATT_MAX_CHARGE_CURRENT);  // For SAFETY
-  uut.setAdapterCurrentLimit(0.04);
+  uut.setAdapterCurrentLimit(0.004);
 
 
   if(PERFORM_VI_CURVE){
@@ -483,11 +445,6 @@ void setup() {
     VI_Curve(0, 2, 0.004, 4, 10);
   }
   
-  if (V_SUPPLY_CORRECTION_HARDWARE){
-    SupplyVoltageCorrection(false);
-    Timer_Init(3,V_SUPPLY_CORRECTION_PERIOD);
-  }
-
   uut.setAdapterCurrentLimit(0.1);
 
   Serial.println("\n\n\tSETUP COMPLETE !! \n");
@@ -508,12 +465,6 @@ void setup() {
 }
 
 void loop() {
-  if(SupplyCorrection){
-    SupplyVoltageCorrection(false);
-    SupplyCorrection = false;
-  }
-
-
   /* ~=~=~=Maximum Runtime Guard=~=~=~ */
   if (millis() - startTime > RUNTIME * 1000){ 
     Serial.println("Test Complete");
@@ -561,10 +512,4 @@ void loop() {
   Serial.print(",");
   Serial.print(I_OUTP, 3);
   Serial.println("");
-
-
-  // nCycles++;
-
-  // Wait before the next loop iteration
-  delay(__PERIOD__);
 }

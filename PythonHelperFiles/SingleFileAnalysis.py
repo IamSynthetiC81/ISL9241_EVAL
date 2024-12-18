@@ -191,7 +191,7 @@ def troubleShoot(vi_data,post_data, stepSize = 0.004, sampling_period = 100):
     
 
     plt.subplot(3, 1, 3)
-    plt.plot(time, d2P, 'g-', label = 'dP')
+    plt.plot(time, dP, 'g-', label = 'dP')
     # plt.plot(time, step, 'g-', label = 'step')
     plt.plot(time, Power, 'r.-', label = 'Power')
     plt.xlabel('Time (s)')

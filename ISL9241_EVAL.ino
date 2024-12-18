@@ -369,11 +369,9 @@ float MPPT(float previousVoltage, float voltage, float previousCurrent, float cu
   Serial.print(dP, 3);
   Serial.print(F(" , "));
 
-  if (voltage <= 4.0) {
+  if (voltage <= ISL9241_MIN_OPERATING_VOLTAGE) {
     return currentLimit - step;
   }
-
-  
 
   if (dV == 0) {
     if (dP >= 0){
@@ -425,7 +423,6 @@ void setup() {
   Serial.print("Runtime : ");
   Serial.print(RUNTIME*1000);
   Serial.println(" milliseconds");
-  
 
   if(!uut.writeBit(Control0, 0, 0)){   perror("Could not disable Reverse Turbo Mode")}              // Disable Reverse Turbo Mode
   if(!uut.writeBit(Control0, 1, 0)){   perror("Could not write bit")}                               // 
@@ -480,8 +477,6 @@ void loop() {
   if (!window){
     return;
   }
-
-  
 
   float voltage = averageVoltageMeasurement();
   float current = averageCurrentMeasurement();

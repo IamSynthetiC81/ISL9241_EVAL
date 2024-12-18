@@ -169,9 +169,9 @@ class ISL9241{
   
     	float setTricleChargeCurrent(TCCL_t lim);
 
-		// bool setNGATE(bool value);
+		bool setNGATE(bool value);
 
-		// StateMachineStatus_t getStateMachineStatus();
+		StateMachineStatus_t getStateMachineStatus();
 
 	private:
 		uint8_t _smb_address;

@@ -1,4 +1,4 @@
-#include "ISL9241.h"
+#include "src/ISL9241.h"
 
 #include <avr/io.h>
 #include <avr/interrupt.h>

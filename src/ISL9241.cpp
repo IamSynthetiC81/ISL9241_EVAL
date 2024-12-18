@@ -98,12 +98,13 @@ bool ISL9241::writeBit(uint16_t reg, uint8_t bit, bool value) {
 	return writeRegister(reg, regValue);
 }
 
-bool ISL9241::readBit(uint16_t reg, uint8_t bit) {
+bool ISL9241::readBit(uint16_t reg, uint8_t bit, bool *value) {
 	uint16_t regValue;
 	if (!readRegister(reg, &regValue)) {
 		return false;
 	}
-	return (regValue & (1 << bit)) != 0;
+	*value = (regValue >> bit) & 1;
+	return true;
 }
 
 float ISL9241::SetSysVoltage(float voltage) {

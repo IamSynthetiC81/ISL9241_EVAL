@@ -40,9 +40,9 @@ void BlinkFatal(){
 /*   Battery characteristics  */
 #define BATT_LOWER_VOLTAGE_LIMIT  2.8                   // Lower voltage limit     
 #define BATT_UPPER_VOLTAGE_LIMIT  3.2                   // Upper voltage limit
-#if BATT_UPPER_VOLTAGE_LIMIT <= BATT_LOWER_VOLTAGE_LIMIT 
-  #error "Invalid param BATT_LOWER_VOLTAGE_LIMIT & BATT_UPPER_VOLTAGE_LIMIT"
-#endif
+// #if (BATT_UPPER_VOLTAGE_LIMIT <= BATT_LOWER_VOLTAGE_LIMIT) 
+//   #error "Invalid param BATT_LOWER_VOLTAGE_LIMIT & BATT_UPPER_VOLTAGE_LIMIT"
+// #endif
 
 #define BATT_MAX_CHARGE_CURRENT   3.00                  // Maximum charge current
 
@@ -482,8 +482,6 @@ void loop() {
   float current = averageCurrentMeasurement();
   float power = voltage * current;
 
-  float V_OUTP = averageAnalogRead(A0)*V_SUPPLY/1023.0;
-  float I_OUTP = (V_OUTP-V_SUPPLY/2) / 0.185;
   // timestap 
   Serial.print(millis() - startTime);
   Serial.print(", ");
@@ -508,8 +506,8 @@ void loop() {
   Serial.print(",");
   Serial.print(uut.getBattChargeCurrent(), 3);
   Serial.print(",");
-  Serial.print(currentLimit, 3);
+  Serial.print(uut.getBatteryVoltage(), 3);
   Serial.print(",");
-  Serial.print(I_OUTP, 3);
+  Serial.print(currentLimit, 3);
   Serial.println("");
 }

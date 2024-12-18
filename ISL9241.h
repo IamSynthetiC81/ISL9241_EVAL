@@ -1,6 +1,12 @@
 #ifndef ISL9241_H
 #define ISL9241_H
 
+#ifndef ARDUINO
+	#error "This library is intended to be used with the Arduino IDE.\
+			Either use  the Arduino IDE \
+			or modify the code to work with your platform"
+#endif
+
 #include <stdint.h>
 #include <Wire.h>
 #include <string.h>
@@ -132,7 +138,7 @@ class ISL9241{
     	bool writeRegister(uint16_t reg, uint16_t value);
 		bool readRegister(uint16_t reg, uint16_t *value);
 
-   	 	bool writeBit(uint16_t reg, uint8_t bit, bool value);
+   		bool writeBit(uint16_t reg, uint8_t bit, bool value);
 		bool readBit(uint16_t reg, uint8_t bit, bool *value);
 
 		float SetSysVoltage(float voltage);
@@ -163,9 +169,9 @@ class ISL9241{
   
     	float setTricleChargeCurrent(TCCL_t lim);
 
-		bool setNGATE(bool value);
+		// bool setNGATE(bool value);
 
-		StateMachineStatus_t getStateMachineStatus();
+		// StateMachineStatus_t getStateMachineStatus();
 
 	private:
 		uint8_t _smb_address;

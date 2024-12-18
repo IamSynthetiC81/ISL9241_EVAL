@@ -1,48 +1,12 @@
+import sys
 import serial
-from threading import Thread
-
-import InstrumentDrivers.Keithley_DAQ6510 as MultiMeter
-import InstrumentDrivers.NGL201 as Load
-
-import time
-
-MultimeterPresent = False
-LoadPresent = False
-try:
-    DAQ = MultiMeter.KeithleyDAQ6510('192.168.2.11')
-    MultimeterPresent = True
-except:
-    print("Multimeter not found")
-    MultimeterPresent = False
-    
-try:
-    NGL201 = Load.NGL201('192.168.2.12')
-    LoadPresent = True
-except:
-    print("Load not found")
-    LoadPresent = False
-    
-if not MultimeterPresent and not LoadPresent:
-    print("No instruments found")
-    StartExternalMeasurement = False
-    
-ExternalMeasurementLineStart = -1
-
 
 # Function to log and parse serial data
 def log_and_parse_serial(ser, log_file_path):
-   
     current_data = []  # Temporary storage for current parsing batch
     
-
     with open(log_file_path, 'w') as log_file:
-        StartExternalMeasurement = False
-        voltage = -1
-        current = -1
-        battCurrent = -1
-        battPower = -1
         lineCount = -1
-        ExternalMeasurementLineStart = -1
         while True:
             try:
                 line = ser.readline().decode('utf-8').strip()
@@ -50,38 +14,12 @@ def log_and_parse_serial(ser, log_file_path):
                     continue
                 
                 lineCount += 1
-                
-                if StartExternalMeasurement and lineCount >= ExternalMeasurementLineStart:
-                    # measure Voltage Current and Power
-                    voltage = DAQ.send_command_resp('MEAS:VOLT? "voltMeasBuffer", READ')
-                    current = DAQ.send_command_resp('MEAS:CURR? "currMeasBuffer", READ')
-                    battCurrent = NGL201.query('MEAS:CURR?')
-                    battPower = NGL201.query('MEAS:POW?')
-                    
+                                    
                 # Print the line to the terminal
-                print(line)
-
-                if (line == 'SETUP COMPLETE !!'):
-                    StartExternalMeasurement = True
-                    ExternalMeasurementLineStart = lineCount + 2
-                    
-                    
-                if (line == 'The test will initiate in 5 seconds'):
-                    # restart the load
-                    NGL201.send_command(":OUTP OFF")
-                    time.sleep(1)
-                    NGL201.send_command(":OUTP ON")
+                print(line)                                       
 
                 # Log data to the file
-                if (StartExternalMeasurement and lineCount >= ExternalMeasurementLineStart):
-                    log_file.write(line)
-                    log_file.write(f", {voltage}")
-                    log_file.write(f", {current} ")
-                    log_file.write(f", {battCurrent} ")
-                    log_file.write(f", {battPower} \n")
-                else:
-                    log_file.write(line + '\n')
-                
+                log_file.write(line + '\n')
                 log_file.flush()                
 
             except Exception as e:
@@ -90,40 +28,10 @@ def log_and_parse_serial(ser, log_file_path):
 
 
 # Main function
-def main():
-    # Serial port configuration
-    COM_PORT = 'COM6'  # Update with your port
-    BAUD_RATE = 115200
-    TIMEOUT = 1
-    LOG_FILE_PATH = 'log\serial_log.txt'
-
-    if MultimeterPresent:
-        # # set full scale voltage and current
-        DAQ.send_command(":SENS:VOLT:RANG 10")
-        DAQ.send_command(":SENS:CURR:RANG 1")
-        
-        DAQ.send_command(":TRAC:DEL 'voltMeasBuffer'")
-        DAQ.send_command(":TRAC:DEL 'currMeasBuffer'")
-        
-        DAQ.send_command('TRACe:MAKE "voltMeasBuffer", 10000')
-        DAQ.send_command('TRACe:MAKE "currMeasBuffer", 10000')
-    
-        DAQ.send_command(":SYST:BEEP 1000, 0.2")
-        time.sleep(0.5)
-        
-    if LoadPresent:
-        NGL201.connect()
-        NGL201.send_command("*RST;*WAI")
-        NGL201.send_command("MEAS:STAT:RES")
-        NGL201.send_command(":OUTP OFF")
-        NGL201.set_current(1, 3)
-        NGL201.set_voltage(1, 6)
-        NGL201.send_command(":SYST:BEEP 1000, 1")
-    
-        time.sleep(1)       
-    
+def main(COM_PORT,LOG_FILE_PATH, BAUD_RATE=115200, TIMEOUT=1):
+           
     try:
-        ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=TIMEOUT)
+        ser = serial.Serial(port=COM_PORT, baudrate=BAUD_RATE, timeout=TIMEOUT)
         print(f"Connected to {COM_PORT} at {BAUD_RATE} baud.")
 
         # Start logging and parsing in a separate thread
@@ -133,18 +41,56 @@ def main():
         while True:
             pass  # Keep the main thread alive
     except serial.SerialException as e:
-        print(f"Serial Error: {e}")
+        if "FileNotFoundError" in str(e):
+            print(f"Serial Error: {e}")
+            print(f"COM Port {COM_PORT} not found.")
+        elif "PermissionError" in str(e):
+            print(f"Serial Error: {e}")
+            print(f"COM Port {COM_PORT} is already in use.")
+        elif "OSError" in str(e):
+            print(f"Serial Error: {e}")
+            print(f"COM Port {COM_PORT} is already in use.")
+        elif "Timeout" in str(e):
+            print(f"Serial Error: {e}")
+            print(f"COM Port {COM_PORT} is not responding.")
+        elif "UnboundLocalError" in str(e):
+            print(f"Serial Error: {e}")
+            print(f"COM Port {COM_PORT} is not responding.")
+        else:
+            print(f"Serial Error: {e}")
+            return
+            
+        
     except KeyboardInterrupt:
         print("Exiting...")
     finally:
-        if ser.is_open:
+        try:
             ser.close()
-        if MultimeterPresent:
-            DAQ.close()
-        if LoadPresent:
-            NGL201.send_command(":OUTP OFF")
-            NGL201.disconnect()
+            print("Serial port closed.")
+        except NameError:
+            print("Serial port was not opened.")
 
 
 if __name__ == '__main__':
-    main()
+    COM_PORT = sys.argv[1]      # get the COM port from the command line
+    LOG_FILE_PATH = sys.argv[2] # get the log file path from the command line
+    BAUD_RATE = 115200          # default baud rate
+    TIMEOUT = 1                 # default timeout
+    
+    print(f"COM_PORT: {COM_PORT}")
+    print(f"LOG_FILE_PATH: {LOG_FILE_PATH}")
+    print(f"BAUD_RATE: {BAUD_RATE}")
+    print(f"TIMEOUT: {TIMEOUT}")
+    
+    # check if BAUD_RATE and TIMEOUT are provided
+    if len(sys.argv) == 4:
+        BAUD_RATE = int(sys.argv[3])
+        TIMEOUT = 1
+    elif len(sys.argv) == 5:
+        BAUD_RATE = int(sys.argv[3])
+        TIMEOUT = int(sys.argv[4])
+    else:
+        BAUD_RATE = 115200
+        TIMEOUT = 1
+    
+    main(COM_PORT, LOG_FILE_PATH, BAUD_RATE, TIMEOUT)
